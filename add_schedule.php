@@ -1,6 +1,6 @@
 <?php
 session_start();
-require_once 'db.php'; // Include Supabase helper
+require_once 'db.php';
 
 // Auth Guard: Admin and Lecturer access only
 if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role'] ?? '', ['Administrator', 'Lecturer'])) {
@@ -11,14 +11,10 @@ if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role'] ?? '', ['Adminis
 $message = '';
 $error = '';
 
-// Fetch dropdown data from Supabase
-$programmes_res = supabase_request('programmes?select=id,program_code,program_name&order=program_name.asc', 'GET');
-$courses_res    = supabase_request('courses?select=id,course_code,course_name&order=course_code.asc', 'GET');
-$rooms_res      = supabase_request('rooms?select=id,room_name&order=room_name.asc', 'GET');
-
-$programmes = ($programmes_res['status'] === 200 && is_array($programmes_res['data'])) ? $programmes_res['data'] : [];
-$courses    = ($courses_res['status'] === 200 && is_array($courses_res['data'])) ? $courses_res['data'] : [];
-$rooms      = ($rooms_res['status'] === 200 && is_array($rooms_res['data'])) ? $rooms_res['data'] : [];
+// Fetch dropdown data from the local MySQL database.
+$programmes = $pdo->query('SELECT id, program_code, program_name FROM programmes ORDER BY program_name ASC')->fetchAll();
+$courses = $pdo->query('SELECT id, course_code, course_name FROM courses ORDER BY course_code ASC')->fetchAll();
+$rooms = $pdo->query('SELECT id, room_name FROM rooms ORDER BY room_name ASC')->fetchAll();
 
 // Handle Form Submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -41,26 +37,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Loop through each selected programme and insert a schedule record
         foreach ($selected_programmes as $program_id) {
-            $payload = [
-                'program_id'  => (int)$program_id,
-                'course_id'   => (int)$course_id,
-                'room_id'     => (int)$room_id,
-                'type'        => $type,
-                'day_of_week' => $day_of_week,
-                'start_time'  => $start_time,
-                'end_time'    => $end_time,
-                'year_level'  => $year_level,
-                'semester'    => $semester,
-                'date'        => $date
-            ];
+            $stmt = $pdo->prepare('
+                INSERT INTO schedules
+                    (program_id, course_id, room_id, type, day_of_week, start_time, end_time, year_level, semester, date)
+                VALUES
+                    (:program_id, :course_id, :room_id, :type, :day_of_week, :start_time, :end_time, :year_level, :semester, :date)
+            ');
 
-            $result = supabase_request('schedules', 'POST', $payload);
-
-            if ($result['status'] === 201 || $result['status'] === 200) {
+            if ($stmt->execute([
+                ':program_id' => (int)$program_id,
+                ':course_id' => (int)$course_id,
+                ':room_id' => (int)$room_id,
+                ':type' => $type,
+                ':day_of_week' => $day_of_week,
+                ':start_time' => $start_time,
+                ':end_time' => $end_time,
+                ':year_level' => $year_level,
+                ':semester' => $semester,
+                ':date' => $date
+            ])) {
                 $inserted_count++;
             } else {
                 $has_error = true;
-                $error = "Error inserting schedule for programme ID {$program_id}: " . json_encode($result['data']);
+                $error = "Error inserting schedule for programme ID {$program_id}.";
                 break;
             }
         }

@@ -1,7 +1,7 @@
 <?php
 session_start();
 
-// Import shared database setup (Supabase / Live DB connection)
+// Import shared database setup
 require_once 'db.php';
 
 // Auth Guard: Direct unauthenticated users to login page
@@ -17,7 +17,26 @@ $role = $_SESSION['role'] ?? 'Student';
 $message = "";
 $statusClass = "";
 
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
 try {
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_schedule']) && in_array($role, ['Administrator', 'Lecturer'], true)) {
+        if (!hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'] ?? '')) {
+            throw new RuntimeException('Your session has expired. Refresh and try again.');
+        }
+        $scheduleId = intval($_POST['schedule_id'] ?? 0);
+        $pdo->beginTransaction();
+        $deleteRequests = $pdo->prepare('DELETE FROM reschedule_requests WHERE schedule_id = :schedule_id');
+        $deleteRequests->execute([':schedule_id' => $scheduleId]);
+        $deleteSchedule = $pdo->prepare('DELETE FROM schedules WHERE id = :schedule_id');
+        $deleteSchedule->execute([':schedule_id' => $scheduleId]);
+        $pdo->commit();
+        $message = $deleteSchedule->rowCount() ? 'Schedule deleted successfully.' : 'Schedule was not found.';
+        $statusClass = $deleteSchedule->rowCount() ? 'success' : 'error';
+    }
+
     // Handle Schedule Slot Creation (Admins and Lecturers)
     if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['add_schedule']) && in_array($role, ['Administrator', 'Lecturer'])) {
         $course_id = intval($_POST['course_id'] ?? 0);
@@ -105,11 +124,11 @@ try {
     // Fetch courses dropdown data
     $courses = $pdo->query("SELECT id, course_code, course_name FROM courses ORDER BY course_code ASC")->fetchAll();
 
-    // Fetch Master Schedule (PostgreSQL compatible formatting and ordering)
+    // Fetch Master Schedule
     $scheduleQuery = "
         SELECT s.id, s.day_of_week, 
-               TO_CHAR(s.start_time::time, 'HH24:MI') AS start_time, 
-               TO_CHAR(s.end_time::time, 'HH24:MI') AS end_time,
+               TIME_FORMAT(s.start_time, '%H:%i') AS start_time,
+               TIME_FORMAT(s.end_time, '%H:%i') AS end_time,
                c.course_code, c.course_name, r.room_name, u.fullname AS lecturer_name
         FROM schedules s
         JOIN courses c ON s.course_id = c.id
@@ -129,7 +148,8 @@ try {
     ";
     $schedules = $pdo->query($scheduleQuery)->fetchAll();
 
-} catch (PDOException $e) {
+} catch (Throwable $e) {
+    if ($pdo->inTransaction()) $pdo->rollBack();
     $message = "Database Error: " . $e->getMessage();
     $statusClass = "error";
 }
@@ -214,11 +234,12 @@ $daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday
 
         <!-- Master Timetable Listing -->
         <div class="dash-card">
-            <h3>Weekly Timetable Grid</h3>
+            <div class="card-heading-row"><h3>Weekly Timetable Grid</h3><span id="scheduleResultCount" class="section-hint"><?php echo count($schedules); ?> slots</span></div>
             
             <?php if (empty($schedules)): ?>
                 <p style="color: #64748b; margin-top: 1rem;">No time slots scheduled yet.</p>
             <?php else: ?>
+                <div class="timetable-filters"><input type="search" id="scheduleSearch" placeholder="Search course, room, or lecturer"><select id="dayFilter"><option value="">All days</option><?php foreach ($daysOfWeek as $d): ?><option value="<?php echo htmlspecialchars($d); ?>"><?php echo htmlspecialchars($d); ?></option><?php endforeach; ?></select><button type="button" id="exportSchedule" class="filter-export">Export CSV</button></div>
                 <div style="overflow-x: auto; margin-top: 1rem;">
                     <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem;">
                         <thead>
@@ -229,17 +250,26 @@ $daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday
                                 <th style="padding: 0.75rem;">Course Title</th>
                                 <th style="padding: 0.75rem;">Room</th>
                                 <th style="padding: 0.75rem;">Lecturer</th>
+                                <th style="padding: 0.75rem;">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php foreach ($schedules as $s): ?>
-                                <tr style="border-bottom: 1px solid #e2e8f0;">
+                                <tr class="schedule-row" data-day="<?php echo htmlspecialchars($s['day_of_week']); ?>" data-search="<?php echo htmlspecialchars(strtolower($s['course_code'] . ' ' . $s['course_name'] . ' ' . $s['room_name'] . ' ' . ($s['lecturer_name'] ?? ''))); ?>" style="border-bottom: 1px solid #e2e8f0;">
                                     <td style="padding: 0.75rem; font-weight: 600; color: #2563eb;"><?php echo htmlspecialchars($s['day_of_week']); ?></td>
                                     <td style="padding: 0.75rem; color: #334155;"><?php echo htmlspecialchars($s['start_time']); ?> - <?php echo htmlspecialchars($s['end_time']); ?></td>
                                     <td style="padding: 0.75rem; font-weight: 600;"><?php echo htmlspecialchars($s['course_code']); ?></td>
                                     <td style="padding: 0.75rem;"><?php echo htmlspecialchars($s['course_name']); ?></td>
                                     <td style="padding: 0.75rem;"><span style="background: #e0f2fe; color: #0369a1; padding: 0.2rem 0.5rem; border-radius: 4px; font-weight: 500;"><?php echo htmlspecialchars($s['room_name']); ?></span></td>
                                     <td style="padding: 0.75rem; color: #64748b;"><?php echo htmlspecialchars($s['lecturer_name'] ?? 'Unassigned'); ?></td>
+                                    <td style="padding: 0.75rem;">
+                                        <a href="edit_schedule.php?id=<?php echo (int) $s['id']; ?>" class="schedule-edit-link">Edit</a>
+                                        <form method="POST" class="inline-delete-form" onsubmit="return confirm('Delete this schedule and its requests?');">
+                                            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
+                                            <input type="hidden" name="schedule_id" value="<?php echo (int) $s['id']; ?>">
+                                            <button type="submit" name="delete_schedule" class="btn-delete">Delete</button>
+                                        </form>
+                                    </td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
@@ -249,6 +279,13 @@ $daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday
         </div>
 
     </main>
+
+    <script>
+        const search = document.getElementById('scheduleSearch'), day = document.getElementById('dayFilter'), rows = Array.from(document.querySelectorAll('.schedule-row')), count = document.getElementById('scheduleResultCount');
+        function filterRows() { const q = (search?.value || '').toLowerCase(); const d = day?.value || ''; let visible = 0; rows.forEach(row => { const show = (!q || row.dataset.search.includes(q)) && (!d || row.dataset.day === d); row.hidden = !show; if (show) visible++; }); if (count) count.textContent = visible + (visible === 1 ? ' slot' : ' slots'); }
+        search?.addEventListener('input', filterRows); day?.addEventListener('change', filterRows);
+        document.getElementById('exportSchedule')?.addEventListener('click', () => { const csv = [['Day','Time','Course Code','Course Title','Room','Lecturer'], ...rows.filter(row => !row.hidden).map(row => Array.from(row.cells).slice(0,6).map(cell => '"' + cell.textContent.trim().replace(/"/g, '""') + '"'))].map(row => row.join(',')).join('\n'); const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'})); link.download = 'timetable.csv'; link.click(); });
+    </script>
 
 </body>
 </html>

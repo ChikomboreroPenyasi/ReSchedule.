@@ -17,8 +17,17 @@ $program_id = $_SESSION['program_id'] ?? null;
 $ca_schedules = [];
 $class_schedules = [];
 $my_requests = [];
+$pending_requests = 0;
+$programme_name = 'your programme';
+$enrolled_year = 1;
+$enrolled_semester = 1;
+$today_classes = 0;
 $message = '';
 $message_type = 'danger';
+
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
 
 // Handle Student Reschedule Request Submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'submit_reschedule') {
@@ -49,6 +58,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 }
 
 try {
+    $profileStmt = $pdo->prepare('SELECT u.year_level, u.semester, p.program_name FROM users u LEFT JOIN programmes p ON u.program_id = p.id WHERE u.id = :user_id LIMIT 1');
+    $profileStmt->execute([':user_id' => $user_id]);
+    $profile = $profileStmt->fetch();
+    if ($profile) {
+        $programme_name = $profile['program_name'] ?: 'your programme';
+        $enrolled_year = (int) ($profile['year_level'] ?: 1);
+        $enrolled_semester = (int) ($profile['semester'] ?: 1);
+    }
     // 1. Fetch CA & Exam Schedules
     if ($role === 'Student' && $program_id) {
         $stmt_ca = $pdo->prepare("
@@ -57,10 +74,10 @@ try {
             FROM schedules s
             LEFT JOIN courses c ON s.course_id = c.id
             LEFT JOIN rooms r ON s.room_id = r.id
-            WHERE s.type IN ('CA', 'Exam') AND s.program_id = :program_id
+            WHERE s.type IN ('CA', 'Exam') AND s.program_id = :program_id AND s.year_level = :year_level AND s.semester = :semester
             ORDER BY s.date ASC, s.start_time ASC
         ");
-        $stmt_ca->execute([':program_id' => $program_id]);
+        $stmt_ca->execute([':program_id' => $program_id, ':year_level' => $enrolled_year, ':semester' => $enrolled_semester]);
     } else {
         $stmt_ca = $pdo->query("
             SELECT s.*, COALESCE(c.course_code, s.course_code) AS course_code, 
@@ -82,13 +99,13 @@ try {
             FROM schedules s
             LEFT JOIN courses c ON s.course_id = c.id
             LEFT JOIN rooms r ON s.room_id = r.id
-            WHERE s.type = 'Class' AND s.program_id = :program_id
+            WHERE s.type = 'Class' AND s.program_id = :program_id AND s.year_level = :year_level AND s.semester = :semester
             ORDER BY CASE s.day_of_week
                 WHEN 'Monday' THEN 1 WHEN 'Tuesday' THEN 2 WHEN 'Wednesday' THEN 3
                 WHEN 'Thursday' THEN 4 WHEN 'Friday' THEN 5 WHEN 'Saturday' THEN 6 ELSE 7 END,
                 s.start_time ASC
         ");
-        $stmt_class->execute([':program_id' => $program_id]);
+        $stmt_class->execute([':program_id' => $program_id, ':year_level' => $enrolled_year, ':semester' => $enrolled_semester]);
     } else {
         $stmt_class = $pdo->query("
             SELECT s.*, COALESCE(c.course_code, s.course_code) AS course_code, 
@@ -120,6 +137,11 @@ try {
         $stmt_reqs->execute([':student_id' => $user_id]);
         $my_requests = $stmt_reqs->fetchAll();
     }
+
+    if (in_array($role, ['Administrator', 'Lecturer'], true)) {
+        $pending_requests = (int) $pdo->query("SELECT COUNT(*) FROM reschedule_requests WHERE status = 'Pending'")->fetchColumn();
+    }
+    $today_classes = count(array_filter($class_schedules, fn ($schedule) => ($schedule['day_of_week'] ?? '') === date('l')));
 
 } catch (PDOException $e) {
     $message = "Database Error: " . $e->getMessage();
@@ -174,8 +196,12 @@ try {
     <main class="dashboard-container">
         
         <header class="welcome-banner">
-            <h1>Welcome, <?php echo htmlspecialchars($fullname); ?>!</h1>
-            <p>Access your portal tools, active timetable slots, and examination schedules below.</p>
+            <div>
+                <span class="eyebrow">Reschedule portal</span>
+                <h1>Welcome, <?php echo htmlspecialchars($fullname); ?>!</h1>
+                <p><?php if ($role === 'Student'): ?>Your classes, assessments, and schedule requests for <?php echo htmlspecialchars($programme_name); ?>, Year <?php echo $enrolled_year; ?>, Semester <?php echo $enrolled_semester; ?> in one place.<?php else: ?>Keep your timetable, courses, resources, and requests moving from one place.<?php endif; ?></p>
+            </div>
+            <a href="timetable.php" class="banner-link">Open timetable &rarr;</a>
         </header>
 
         <?php if (!empty($message)): ?>
@@ -183,6 +209,13 @@ try {
                 <?php echo htmlspecialchars($message); ?>
             </div>
         <?php endif; ?>
+
+        <section class="summary-grid" aria-label="Dashboard summary">
+            <div class="summary-card summary-card-primary"><span class="summary-label">My classes</span><strong><?php echo count($class_schedules); ?></strong><small>Weekly schedule</small></div>
+            <div class="summary-card"><span class="summary-label">Today</span><strong><?php echo $today_classes; ?></strong><small><?php echo htmlspecialchars(date('l')); ?> classes</small></div>
+            <div class="summary-card"><span class="summary-label">Assessments</span><strong><?php echo count($ca_schedules); ?></strong><small>Published slots</small></div>
+            <div class="summary-card <?php echo $pending_requests > 0 ? 'summary-card-attention' : ''; ?>"><span class="summary-label"><?php echo $role === 'Student' ? 'My requests' : 'Pending requests'; ?></span><strong><?php echo $role === 'Student' ? count($my_requests) : $pending_requests; ?></strong><small><?php echo $role === 'Student' ? 'Reschedule history' : 'Needs review'; ?></small></div>
+        </section>
 
         <!-- Quick Actions Grid -->
         <h3 style="margin-bottom: 1rem; color: #334155;">Management & Quick Actions</h3>
@@ -223,6 +256,10 @@ try {
             <?php endif; ?>
 
             <?php if ($role === 'Administrator'): ?>
+                <a href="ai_import.php" class="action-card">
+                    <h4>AI Timetable Import</h4>
+                    <p>Upload and review a timetable document</p>
+                </a>
                 <a href="manage_users.php" class="action-card">
                     <h4>Manage Users</h4>
                     <p>Register & update student/lecturer accounts</p>

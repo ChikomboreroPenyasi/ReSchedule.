@@ -17,9 +17,12 @@ try {
 ?>
 
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Manage Users</title>
+    <link rel="stylesheet" href="css/style.css">
     <style>
         body { font-family: Arial, sans-serif; margin: 20px; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
@@ -28,7 +31,7 @@ try {
         .back-link { text-decoration: none; color: #0088cc; font-weight: bold; }
     </style>
 </head>
-<body>
+<body class="dashboard-body">
 
 <a href="dashboard.php" class="back-link">&larr; Back to Dashboard</a>
 <h2>Registered Users</h2>

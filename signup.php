@@ -5,19 +5,14 @@ require_once 'db.php';
 $message = '';
 $statusClass = '';
 $programs = [];
+$year_level = 1;
+$semester = 1;
 
 // Fetch available programs directly from the 'programmes' table
 try {
     $programsStmt = $pdo->query("
-        SELECT id, 
-               COALESCE(
-                   NULLIF(to_jsonb(p)->>'program_name', ''),
-                   NULLIF(to_jsonb(p)->>'programme_name', ''),
-                   NULLIF(to_jsonb(p)->>'title', ''),
-                   NULLIF(to_jsonb(p)->>'name', ''),
-                   'Program #' || id
-               ) AS program_name 
-        FROM programmes p 
+        SELECT id, program_name
+        FROM programmes
         ORDER BY id ASC
     ");
     $programs = $programsStmt->fetchAll();
@@ -33,12 +28,17 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $confirm_password = trim($_POST['confirm_password'] ?? '');
     $role = $_POST['role'] ?? 'Student';
     $program_id = !empty($_POST['program_id']) ? intval($_POST['program_id']) : null;
+    $year_level = intval($_POST['year_level'] ?? 1);
+    $semester = intval($_POST['semester'] ?? 1);
 
     if (empty($fullname) || empty($student_number) || empty($password)) {
         $message = "Please fill in all required fields.";
         $statusClass = "error";
     } elseif ($password !== $confirm_password) {
         $message = "Passwords do not match.";
+        $statusClass = "error";
+    } elseif ($year_level < 1 || $year_level > 4 || $semester < 1 || $semester > 2) {
+        $message = "Please select a valid year level and semester.";
         $statusClass = "error";
     } else {
         try {
@@ -54,15 +54,17 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
                 // Insert user saving student_number as primary account identifier
                 $insertStmt = $pdo->prepare("
-                    INSERT INTO users (student_number, fullname, password_hash, role, program_id)
-                    VALUES (:student_number, :fullname, :password_hash, :role, :program_id)
+                    INSERT INTO users (student_number, fullname, password_hash, role, program_id, year_level, semester)
+                    VALUES (:student_number, :fullname, :password_hash, :role, :program_id, :year_level, :semester)
                 ");
                 $insertStmt->execute([
                     ':student_number' => $student_number,
                     ':fullname' => $fullname,
                     ':password_hash' => $hashedPassword,
                     ':role' => $role,
-                    ':program_id' => $program_id
+                    ':program_id' => $program_id,
+                    ':year_level' => $year_level,
+                    ':semester' => $semester
                 ]);
 
                 $message = "Registration successful! You can now log in.";
@@ -143,6 +145,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             border-color: #2563eb;
             box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
         }
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 1rem;
+        }
         .btn-primary {
             width: 100%;
             padding: 0.75rem;
@@ -168,6 +175,12 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             color: #2563eb;
             text-decoration: none;
             font-weight: 600;
+        }
+        @media (max-width: 520px) {
+            .form-row {
+                grid-template-columns: 1fr;
+                gap: 0;
+            }
         }
     </style>
 </head>
@@ -213,6 +226,26 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                             <option value="<?php echo $prog['id']; ?>"><?php echo htmlspecialchars($prog['program_name']); ?></option>
                         <?php endforeach; ?>
                     </select>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="year_level">Year Level Enrolled *</label>
+                        <select id="year_level" name="year_level" required>
+                            <option value="">Select year...</option>
+                            <?php for ($level = 1; $level <= 4; $level++): ?>
+                                <option value="<?php echo $level; ?>" <?php echo $year_level === $level ? 'selected' : ''; ?>>Year <?php echo $level; ?></option>
+                            <?php endfor; ?>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="semester">Semester Enrolled *</label>
+                        <select id="semester" name="semester" required>
+                            <option value="">Select semester...</option>
+                            <option value="1" <?php echo $semester === 1 ? 'selected' : ''; ?>>Semester 1</option>
+                            <option value="2" <?php echo $semester === 2 ? 'selected' : ''; ?>>Semester 2</option>
+                        </select>
+                    </div>
                 </div>
 
                 <div class="form-group">

@@ -18,13 +18,29 @@ try {
         $course_name = trim($_POST['course_name'] ?? '');
         $lecturer_id = intval($_POST['lecturer_id'] ?? 0);
         $selected_programmes = $_POST['programmes'] ?? []; 
-        $year_level = intval($_POST['year_level'] ?? 1);
-        $semester   = intval($_POST['semester'] ?? 1);
+        $year_levels = $_POST['year_level'] ?? [];
+        $semesters = $_POST['semester'] ?? [];
 
         if (empty($course_code) || empty($course_name)) {
             $message = "Course Code and Course Name are required.";
             $statusClass = "error";
+        } elseif (empty($selected_programmes) || !is_array($selected_programmes)) {
+            $message = "Select at least one programme for this course.";
+            $statusClass = "error";
         } else {
+            foreach ($selected_programmes as $prog_id) {
+                $prog_id = intval($prog_id);
+                $level = intval($year_levels[$prog_id] ?? 0);
+                $programSemester = intval($semesters[$prog_id] ?? 0);
+                if ($level < 1 || $level > 4 || $programSemester < 1 || $programSemester > 2) {
+                    $message = "Choose a valid year level and semester for every selected programme.";
+                    $statusClass = "error";
+                    break;
+                }
+            }
+        }
+
+        if ($statusClass !== 'error') {
             // 1. Insert Course
             $insertCourseStmt = $pdo->prepare("
                 INSERT INTO courses (course_code, course_name, lecturer_id) 
@@ -44,11 +60,12 @@ try {
                     VALUES (:course_id, :program_id, :year_level, :semester)
                 ");
                 foreach ($selected_programmes as $prog_id) {
+                    $prog_id = intval($prog_id);
                     $linkStmt->execute([
                         ':course_id'  => $new_course_id,
-                        ':program_id' => intval($prog_id),
-                        ':year_level' => $year_level,
-                        ':semester'   => $semester
+                        ':program_id' => $prog_id,
+                        ':year_level' => intval($year_levels[$prog_id]),
+                        ':semester'   => intval($semesters[$prog_id])
                     ]);
                 }
             }
@@ -67,7 +84,7 @@ try {
     // Fetch Existing Courses with assigned Programme Codes and Levels
     $coursesQuery = "
         SELECT c.id, c.course_code, c.course_name, u.fullname AS lecturer_name,
-               STRING_AGG(DISTINCT p.program_code || ' (Yr ' || cp.year_level || ', Sem ' || cp.semester || ')', ', ') AS program_codes
+               GROUP_CONCAT(DISTINCT CONCAT(p.program_code, ' (Yr ', cp.year_level, ', Sem ', cp.semester, ')') ORDER BY p.program_code SEPARATOR ', ') AS program_codes
         FROM courses c
         LEFT JOIN users u ON c.lecturer_id = u.id
         LEFT JOIN course_program cp ON c.id = cp.course_id
@@ -107,6 +124,9 @@ try {
             align-items: center;
             gap: 0.4rem;
         }
+        .programme-assignment { display: grid; gap: 0.45rem; padding: 0.55rem; border: 1px solid #e2e8f0; border-radius: 5px; background: #ffffff; }
+        .programme-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; padding-left: 1.4rem; }
+        .programme-fields select { min-width: 0; padding: 0.35rem; border: 1px solid #b8c7d8; border-radius: 4px; font-size: 0.75rem; }
     </style>
 </head>
 <body class="dashboard-body">
@@ -159,35 +179,24 @@ try {
                     </div>
                 </div>
 
-                <!-- Academic Year Level & Semester Selection -->
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-                    <div class="form-group" style="margin: 0;">
-                        <label for="year_level">Academic Year Level</label>
-                        <select id="year_level" name="year_level" required>
-                            <option value="1">Year 1</option>
-                            <option value="2">Year 2</option>
-                            <option value="3">Year 3</option>
-                            <option value="4">Year 4</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group" style="margin: 0;">
-                        <label for="semester">Semester</label>
-                        <select id="semester" name="semester" required>
-                            <option value="1">Semester 1</option>
-                            <option value="2">Semester 2</option>
-                        </select>
-                    </div>
-                </div>
-
                 <div class="form-group" style="margin: 0;">
-                    <label>Select Offering Programmes (Check all that apply):</label>
+                    <label>Select Offering Programmes and Assign Level/Semester:</label>
                     <div class="checkbox-grid">
                         <?php foreach ($programmes as $p): ?>
-                            <label class="checkbox-item">
-                                <input type="checkbox" name="programmes[]" value="<?php echo $p['id']; ?>">
-                                <strong>[<?php echo htmlspecialchars($p['program_code']); ?>]</strong> <?php echo htmlspecialchars($p['program_name']); ?>
-                            </label>
+                            <div class="programme-assignment">
+                                <label class="checkbox-item">
+                                    <input type="checkbox" name="programmes[]" value="<?php echo $p['id']; ?>">
+                                    <span><strong>[<?php echo htmlspecialchars($p['program_code']); ?>]</strong> <?php echo htmlspecialchars($p['program_name']); ?></span>
+                                </label>
+                                <div class="programme-fields">
+                                    <select name="year_level[<?php echo $p['id']; ?>]" aria-label="Year level for <?php echo htmlspecialchars($p['program_code']); ?>">
+                                        <option value="1">Year 1</option><option value="2">Year 2</option><option value="3">Year 3</option><option value="4">Year 4</option>
+                                    </select>
+                                    <select name="semester[<?php echo $p['id']; ?>]" aria-label="Semester for <?php echo htmlspecialchars($p['program_code']); ?>">
+                                        <option value="1">Sem 1</option><option value="2">Sem 2</option>
+                                    </select>
+                                </div>
+                            </div>
                         <?php endforeach; ?>
                     </div>
                 </div>

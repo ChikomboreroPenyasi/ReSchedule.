@@ -1,7 +1,7 @@
 <?php
 session_start();
 
-// Import shared database setup (Supabase / Live DB connection)
+// Import shared database setup
 require_once 'db.php';
 
 // Auth & Access Control Guard: Only Logged-in Admins or Lecturers

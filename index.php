@@ -6,7 +6,6 @@
     <title>Reschedule - Automated Timetabling System</title>
     <link rel="stylesheet" href="css/style.css">
     
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 
@@ -15,7 +14,7 @@
         <nav class="nav-links">
             <a href="#features">Features</a>
             <a href="#platforms">Platforms</a>
-            <a href="#admin-management">Schedule Portal</a>
+            <a href="#workspaces">Workspaces</a>
             <a href="login.php" class="btn-secondary">Log In</a>
             <a href="signup.php" class="btn-primary">Get Started</a>
         </nav>
@@ -91,77 +90,35 @@
         </div>
     </section>
 
-    <section id="admin-management" class="features-section" style="background-color: #f8f9fa; padding: 40px 20px;">
+    <section id="workspaces" class="workspace-templates">
         <div class="section-header">
-            <h2>Live Web Schedule Management</h2>
-            <p>Add or update schedules below to broadcast changes instantly to the Android app.</p>
+            <h2>Choose your way into the timetable</h2>
+            <p>Every role gets a focused starting point, with the right tools ready when you sign in.</p>
         </div>
-
-        <div style="max-width: 800px; margin: 0 auto; background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-            <form id="scheduleForm" style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-                <div>
-                    <label style="font-weight:bold; display:block; margin-bottom:5px;">Course Code:</label>
-                    <input type="text" id="courseCode" placeholder="e.g. ICT123" required style="width:100%; padding:10px; border:1px solid #ccc; border-radius:4px;">
-                </div>
-
-                <div>
-                    <label style="font-weight:bold; display:block; margin-bottom:5px;">Course Name:</label>
-                    <input type="text" id="courseName" placeholder="e.g. Web Development" required style="width:100%; padding:10px; border:1px solid #ccc; border-radius:4px;">
-                </div>
-
-                <div>
-                    <label style="font-weight:bold; display:block; margin-bottom:5px;">Day of Week:</label>
-                    <select id="dayOfWeek" required style="width:100%; padding:10px; border:1px solid #ccc; border-radius:4px;">
-                        <option value="Monday">Monday</option>
-                        <option value="Tuesday">Tuesday</option>
-                        <option value="Wednesday">Wednesday</option>
-                        <option value="Thursday">Thursday</option>
-                        <option value="Friday">Friday</option>
-                        <option value="Saturday">Saturday</option>
-                    </select>
-                </div>
-
-                <div>
-                    <label style="font-weight:bold; display:block; margin-bottom:5px;">Type:</label>
-                    <select id="scheduleType" style="width:100%; padding:10px; border:1px solid #ccc; border-radius:4px;">
-                        <option value="Class">Class</option>
-                        <option value="CA">CA</option>
-                        <option value="Exam">Exam</option>
-                    </select>
-                </div>
-
-                <div>
-                    <label style="font-weight:bold; display:block; margin-bottom:5px;">Start Time:</label>
-                    <input type="time" id="startTime" required style="width:100%; padding:10px; border:1px solid #ccc; border-radius:4px;">
-                </div>
-
-                <div>
-                    <label style="font-weight:bold; display:block; margin-bottom:5px;">End Time:</label>
-                    <input type="time" id="endTime" required style="width:100%; padding:10px; border:1px solid #ccc; border-radius:4px;">
-                </div>
-
-                <div style="grid-column: span 2;">
-                    <button type="submit" class="btn-primary-lg" style="width:100%; border:none; cursor:pointer;">Publish / Reschedule</button>
-                </div>
-            </form>
-
-            <h3 style="margin-top: 30px;">Current Live Schedules</h3>
-            <div style="overflow-x:auto;">
-                <table id="scheduleTable" style="width:100%; border-collapse: collapse; margin-top:10px;">
-                    <thead>
-                        <tr style="background:#f2f2f2; text-align:left;">
-                            <th style="padding:10px; border:1px solid #ddd;">Course Code</th>
-                            <th style="padding:10px; border:1px solid #ddd;">Course Name</th>
-                            <th style="padding:10px; border:1px solid #ddd;">Day</th>
-                            <th style="padding:10px; border:1px solid #ddd;">Start Time</th>
-                            <th style="padding:10px; border:1px solid #ddd;">End Time</th>
-                            <th style="padding:10px; border:1px solid #ddd;">Type</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        </tbody>
-                </table>
-            </div>
+        <div class="workspace-tabs" role="tablist" aria-label="Workspace roles">
+            <button class="workspace-tab is-active" id="student-tab" role="tab" aria-selected="true" aria-controls="student-workspace" data-workspace="student">Student</button>
+            <button class="workspace-tab" id="lecturer-tab" role="tab" aria-selected="false" aria-controls="lecturer-workspace" data-workspace="lecturer">Lecturer</button>
+            <button class="workspace-tab" id="admin-tab" role="tab" aria-selected="false" aria-controls="admin-workspace" data-workspace="admin">Administrator</button>
+        </div>
+        <div class="workspace-template-grid">
+            <article class="workspace-template workspace-template-student" id="student-workspace" role="tabpanel" aria-labelledby="student-tab" data-workspace-panel="student">
+                <span class="workspace-kicker">For students</span>
+                <h3>Know what is next.</h3>
+                <p>See your weekly classes, upcoming assessments, and request a change when life gets in the way.</p>
+                <a href="signup.php" class="template-link">Create student account <span>&rarr;</span></a>
+            </article>
+            <article class="workspace-template workspace-template-staff" id="lecturer-workspace" role="tabpanel" aria-labelledby="lecturer-tab" data-workspace-panel="lecturer" hidden>
+                <span class="workspace-kicker">For lecturers</span>
+                <h3>Keep teaching moving.</h3>
+                <p>Review teaching slots, manage room changes, and respond to student reschedule requests.</p>
+                <a href="login.php" class="template-link">Open staff portal <span>&rarr;</span></a>
+            </article>
+            <article class="workspace-template workspace-template-admin" id="admin-workspace" role="tabpanel" aria-labelledby="admin-tab" data-workspace-panel="admin" hidden>
+                <span class="workspace-kicker">For administrators</span>
+                <h3>Launch the whole schedule.</h3>
+                <p>Import a timetable, map programmes, resolve conflicts, and publish a dependable campus schedule.</p>
+                <a href="login.php" class="template-link">Manage timetable <span>&rarr;</span></a>
+            </article>
         </div>
     </section>
 
@@ -180,80 +137,19 @@
     <script src="js/main.js"></script>
 
     <script>
-        // Configured Supabase Credentials
-        const SUPABASE_URL = "https://qthipmlvcmmveoijndsn.supabase.co";
-        const SUPABASE_ANON_KEY = "sb_publishable_Hf0qHeWqyNfn3Mla1zBSHA_OYgNRbO2";
-
-        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-        // Fetch and display schedules from Supabase
-        async function loadSchedules() {
-            const { data, error } = await supabaseClient
-                .from('schedules')
-                .select('*');
-
-            if (error) {
-                console.error('Error fetching schedules:', error);
-                return;
-            }
-
-            const tbody = document.querySelector('#scheduleTable tbody');
-            if (tbody) {
-                tbody.innerHTML = '';
-                data.forEach(item => {
-                    const row = `<tr>
-                        <td style="padding:8px; border:1px solid #ddd;">${item.course_code || ''}</td>
-                        <td style="padding:8px; border:1px solid #ddd;">${item.course_name || ''}</td>
-                        <td style="padding:8px; border:1px solid #ddd;">${item.day_of_week}</td>
-                        <td style="padding:8px; border:1px solid #ddd;">${item.start_time}</td>
-                        <td style="padding:8px; border:1px solid #ddd;">${item.end_time}</td>
-                        <td style="padding:8px; border:1px solid #ddd;">${item.type}</td>
-                    </tr>`;
-                    tbody.innerHTML += row;
+        document.querySelectorAll('.workspace-tab').forEach(function (tab) {
+            tab.addEventListener('click', function () {
+                const workspace = tab.dataset.workspace;
+                document.querySelectorAll('.workspace-tab').forEach(function (item) {
+                    const active = item === tab;
+                    item.classList.toggle('is-active', active);
+                    item.setAttribute('aria-selected', active ? 'true' : 'false');
                 });
-            }
-        }
-
-        // Handle Schedule Form Submission
-        const form = document.getElementById('scheduleForm');
-        if (form) {
-            form.addEventListener('submit', async (e) => {
-                e.preventDefault();
-
-                const courseCode = document.getElementById('courseCode').value;
-                const courseName = document.getElementById('courseName').value;
-                const dayOfWeek = document.getElementById('dayOfWeek').value;
-                const startTime = document.getElementById('startTime').value;
-                const endTime = document.getElementById('endTime').value;
-                const type = document.getElementById('scheduleType').value;
-
-                const { data, error } = await supabaseClient
-                    .from('schedules')
-                    .insert([
-                        {
-                            course_id: 1, 
-                            room_id: 1,   
-                            course_code: courseCode,
-                            course_name: courseName,
-                            day_of_week: dayOfWeek,
-                            start_time: startTime,
-                            end_time: endTime,
-                            type: type
-                        }
-                    ]);
-
-                if (error) {
-                    alert('Failed to publish schedule: ' + error.message);
-                } else {
-                    alert('Schedule published successfully! Mobile app will update automatically.');
-                    form.reset();
-                    loadSchedules();
-                }
+                document.querySelectorAll('[data-workspace-panel]').forEach(function (panel) {
+                    panel.hidden = panel.dataset.workspacePanel !== workspace;
+                });
             });
-        }
-
-        // Load schedule list when web page opens
-        loadSchedules();
+        });
     </script>
 </body>
 </html>
