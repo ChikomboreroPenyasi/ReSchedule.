@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ReSchedule. Mobile - Welcome</title>
+    <link rel="icon" type="image/jpeg" href="assets/reschedule-app-icon.jpeg">
+    <link rel="stylesheet" href="css/style.css?v=20260930-logo">
+</head>
+<body class="splash-body">
+
+    <!-- Mobile Viewport Container -->
+    <main class="splash-container">
+        
+        <!-- App Branding -->
+        <div class="splash-branding">
+            <div class="splash-icon">📅</div>
+            <h1 class="splash-title">ReSchedule.</h1>
+            <p class="splash-tagline">Automated Timetabling System</p>
+        </div>
+
+        <!-- Loading Indicator -->
+        <div class="splash-loader-box">
+            <div class="spinner"></div>
+            <p class="loading-text">Initializing schedule engine...</p>
+        </div>
+
+        <!-- Manual Navigation -->
+        <div class="splash-footer">
+            <a href="signup.php" class="btn-skip">Skip Intro &rarr;</a>
+        </div>
+
+    </main>
+
+    <!-- Auto-Redirect Logic -->
+    <script>
+        // Redirects (Sign-Up page) after 3 seconds
+        setTimeout(function() {
+            window.location.href = "signup.php";
+        }, 3000);
+    </script>
+</body>
+</html>
