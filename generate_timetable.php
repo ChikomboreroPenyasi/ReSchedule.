@@ -298,7 +298,7 @@ try {
             }
             $pdo->beginTransaction();
             if (!empty($preview['clear_existing'])) {
-                $ids = $pdo->prepare('SELECT id FROM schedules WHERE program_id = :pid AND year_level = :yl AND semester = :sem AND type = "Class"');
+                $ids = $pdo->prepare("SELECT id FROM schedules WHERE program_id = :pid AND year_level = :yl AND semester = :sem AND type = 'Class'");
                 $ids->execute([':pid' => $preview['program_id'], ':yl' => $preview['year_level'], ':sem' => $preview['semester']]);
                 $scheduleIds = $ids->fetchAll(PDO::FETCH_COLUMN);
                 if ($scheduleIds) {
@@ -308,10 +308,10 @@ try {
                 }
             }
 
-            $insert = $pdo->prepare('
+            $insert = $pdo->prepare("
                 INSERT INTO schedules (program_id, course_id, room_id, lecturer_id, type, day_of_week, start_time, end_time, year_level, semester)
-                VALUES (:program_id, :course_id, :room_id, :lecturer_id, "Class", :day, :start, :end, :year_level, :semester)
-            ');
+                VALUES (:program_id, :course_id, :room_id, :lecturer_id, 'Class', :day, :start, :end, :year_level, :semester)
+            ");
             foreach ($preview['placements'] as $row) {
                 $insert->execute([
                     ':program_id' => $preview['program_id'],
@@ -355,13 +355,12 @@ try {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ReSchedule. - Generate Timetable</title>
-    <link rel="icon" type="image/jpeg" href="assets/reschedule-app-icon.jpeg">
+    <title>Reschedule - Generate Timetable</title>
     <link rel="stylesheet" href="css/style.css?v=<?php echo (int) filemtime(__DIR__ . '/css/style.css'); ?>">
 </head>
 <body class="dashboard-body">
 <nav class="navbar">
-    <div class="logo">ReSchedule<span>.</span></div>
+    <div class="logo">Reschedule<span>.</span></div>
     <div class="user-profile">
         <a href="dashboard.php" class="card-link">&larr; Dashboard</a>
         <a href="logout.php" class="btn-logout">Log Out</a>

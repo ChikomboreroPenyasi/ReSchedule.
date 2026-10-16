@@ -137,12 +137,12 @@ try {
 			$pdo->beginTransaction();
 			foreach ($preview as $row) {
 				$find = $pdo->prepare('SELECT id FROM programmes WHERE program_code = :code LIMIT 1'); $find->execute([':code' => $row['program_code']]); $program = $find->fetch();
-				if (!$program) { $add = $pdo->prepare('INSERT INTO programmes (program_code, program_name, level) VALUES (:code, :name, :level)'); $add->execute([':code' => $row['program_code'], ':name' => $row['program_code'], ':level' => $row['year_level']]); $programId = $pdo->lastInsertId(); } else $programId = $program['id'];
+				if (!$program) { $add = $pdo->prepare('INSERT INTO programmes (program_code, program_name, level) VALUES (:code, :name, :level) RETURNING id'); $add->execute([':code' => $row['program_code'], ':name' => $row['program_code'], ':level' => $row['year_level']]); $programId = $add->fetchColumn(); } else $programId = $program['id'];
 				$find = $pdo->prepare('SELECT id FROM courses WHERE course_code = :code LIMIT 1'); $find->execute([':code' => $row['course_code']]); $course = $find->fetch();
-				if (!$course) { $add = $pdo->prepare('INSERT INTO courses (course_code, course_name) VALUES (:code, :name)'); $add->execute([':code' => $row['course_code'], ':name' => $row['course_name']]); $courseId = $pdo->lastInsertId(); } else $courseId = $course['id'];
+				if (!$course) { $add = $pdo->prepare('INSERT INTO courses (course_code, course_name) VALUES (:code, :name) RETURNING id'); $add->execute([':code' => $row['course_code'], ':name' => $row['course_name']]); $courseId = $add->fetchColumn(); } else $courseId = $course['id'];
 				$find = $pdo->prepare('SELECT id FROM rooms WHERE room_name = :name LIMIT 1'); $find->execute([':name' => $row['room_name']]); $room = $find->fetch();
-				if (!$room) { $add = $pdo->prepare('INSERT INTO rooms (room_name, capacity) VALUES (:name, 50)'); $add->execute([':name' => $row['room_name']]); $roomId = $pdo->lastInsertId(); } else $roomId = $room['id'];
-				$map = $pdo->prepare('INSERT IGNORE INTO course_program (course_id, program_id, year_level, semester) VALUES (:course, :program, :year, :semester)'); $map->execute([':course' => $courseId, ':program' => $programId, ':year' => $row['year_level'], ':semester' => $row['semester']]);
+				if (!$room) { $add = $pdo->prepare('INSERT INTO rooms (room_name, capacity) VALUES (:name, 50) RETURNING id'); $add->execute([':name' => $row['room_name']]); $roomId = $add->fetchColumn(); } else $roomId = $room['id'];
+				$map = $pdo->prepare('INSERT INTO course_program (course_id, program_id, year_level, semester) VALUES (:course, :program, :year, :semester) ON CONFLICT DO NOTHING'); $map->execute([':course' => $courseId, ':program' => $programId, ':year' => $row['year_level'], ':semester' => $row['semester']]);
 				$add = $pdo->prepare('INSERT INTO schedules (program_id, course_id, room_id, type, day_of_week, start_time, end_time, year_level, semester) VALUES (:program, :course, :room, :type, :day, :start, :end, :year, :semester)'); $add->execute([':program' => $programId, ':course' => $courseId, ':room' => $roomId, ':type' => $row['type'], ':day' => $row['day_of_week'], ':start' => $row['start_time'], ':end' => $row['end_time'], ':year' => $row['year_level'], ':semester' => $row['semester']]);
 			}
 			$pdo->commit(); unset($_SESSION['ai_import_preview']); $preview = []; $message = 'Timetable imported successfully.'; $messageType = 'success';
@@ -151,8 +151,8 @@ try {
 } catch (Throwable $e) { if ($pdo->inTransaction()) $pdo->rollBack(); $message = $e->getMessage(); $messageType = 'error'; }
 ?>
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>AI Timetable Import</title><link rel="icon" type="image/jpeg" href="assets/reschedule-app-icon.jpeg"><link rel="stylesheet" href="css/style.css?v=<?php echo (int) filemtime(__DIR__ . '/css/style.css'); ?>"></head>
-<body class="dashboard-body"><nav class="navbar"><div class="logo">ReSchedule<span>.</span></div><div class="user-profile"><a href="dashboard.php" class="card-link">&larr; Dashboard</a><a href="logout.php" class="btn-logout">Log Out</a></div></nav>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>AI Timetable Import</title><link rel="stylesheet" href="css/style.css"></head>
+<body class="dashboard-body"><nav class="navbar"><div class="logo">Reschedule<span>.</span></div><div class="user-profile"><a href="dashboard.php" class="card-link">&larr; Dashboard</a><a href="logout.php" class="btn-logout">Log Out</a></div></nav>
 <main class="dashboard-container"><header class="welcome-banner"><div><span class="eyebrow">Administrator workspace</span><h1>AI timetable import</h1><p>Upload, review, and confirm a timetable document.</p></div></header>
 <?php if ($message): ?><div class="alert-box <?php echo htmlspecialchars($messageType); ?>"><?php echo htmlspecialchars($message); ?></div><?php endif; ?>
 <section class="dash-card"><h3>Analyse document</h3><form method="POST" enctype="multipart/form-data"><input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>"><input type="file" name="timetable_document" accept=".pdf,.csv,.txt,.png,.jpg,.jpeg" required><button class="btn-submit" name="analyse_document">Analyse timetable</button></form></section>

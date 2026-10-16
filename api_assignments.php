@@ -7,7 +7,7 @@ try {
         "SELECT 0 AS id,
                 'No pending assignments' AS title,
                 '' AS course_code,
-                DATE_FORMAT(DATE_ADD(CURDATE(), INTERVAL 7 DAY), '%Y-%m-%d') AS due_date,
+                TO_CHAR(CURRENT_DATE + 7, 'YYYY-MM-DD') AS due_date,
                 'No assignments are currently scheduled for this student.' AS description,
                 0 AS is_completed"
     );

@@ -26,35 +26,22 @@ try {
             $statusClass = 'error';
         } else {
             $courseId = (int) ($_POST['course_id'] ?? 0);
+            $scheduleCountStmt = $pdo->prepare('SELECT COUNT(*) FROM schedules WHERE course_id = :course_id');
+            $scheduleCountStmt->execute([':course_id' => $courseId]);
             if ($courseId <= 0) {
                 $message = 'Choose a valid course to delete.';
                 $statusClass = 'error';
+            } elseif ((int) $scheduleCountStmt->fetchColumn() > 0) {
+                $message = 'This course has timetable slots. Remove or reassign those slots before deleting the course.';
+                $statusClass = 'error';
             } else {
                 $pdo->beginTransaction();
-
-                $scheduleIdsStmt = $pdo->prepare('SELECT id FROM schedules WHERE course_id = :course_id');
-                $scheduleIdsStmt->execute([':course_id' => $courseId]);
-                $scheduleIds = $scheduleIdsStmt->fetchAll(PDO::FETCH_COLUMN);
-
-                if (!empty($scheduleIds)) {
-                    $schedulePlaceholders = implode(',', array_fill(0, count($scheduleIds), '?'));
-                    $deleteRequestsStmt = $pdo->prepare("DELETE FROM reschedule_requests WHERE schedule_id IN ($schedulePlaceholders)");
-                    $deleteRequestsStmt->execute($scheduleIds);
-
-                    $deleteSchedulesStmt = $pdo->prepare("DELETE FROM schedules WHERE id IN ($schedulePlaceholders)");
-                    $deleteSchedulesStmt->execute($scheduleIds);
-                }
-
-                $deleteCourseLecturersStmt = $pdo->prepare('DELETE FROM course_lecturers WHERE course_id = :course_id');
-                $deleteCourseLecturersStmt->execute([':course_id' => $courseId]);
-
                 $deleteMappingsStmt = $pdo->prepare('DELETE FROM course_program WHERE course_id = :course_id');
                 $deleteMappingsStmt->execute([':course_id' => $courseId]);
-
                 $deleteCourseStmt = $pdo->prepare('DELETE FROM courses WHERE id = :course_id');
                 $deleteCourseStmt->execute([':course_id' => $courseId]);
                 $pdo->commit();
-                $message = $deleteCourseStmt->rowCount() ? 'Course and all linked timetable entries were deleted successfully.' : 'Course was not found.';
+                $message = $deleteCourseStmt->rowCount() ? 'Course deleted successfully.' : 'Course was not found.';
                 $statusClass = $deleteCourseStmt->rowCount() ? 'success' : 'error';
             }
         }
@@ -115,9 +102,9 @@ try {
                 $deleteMappingsStmt = $pdo->prepare('DELETE FROM course_program WHERE course_id = :course_id');
                 $deleteMappingsStmt->execute([':course_id' => $courseId]);
             } else {
-                $insertCourseStmt = $pdo->prepare('INSERT INTO courses (course_code, course_name, lecturer_id) VALUES (:code, :name, :lecturer_id)');
+                $insertCourseStmt = $pdo->prepare('INSERT INTO courses (course_code, course_name, lecturer_id) VALUES (:code, :name, :lecturer_id) RETURNING id');
                 $insertCourseStmt->execute([':code' => $course_code, ':name' => $course_name, ':lecturer_id' => $lecturer_id > 0 ? $lecturer_id : null]);
-                $new_course_id = (int) $pdo->lastInsertId();
+                $new_course_id = (int) $insertCourseStmt->fetchColumn();
             }
 
             $linkStmt = $pdo->prepare('INSERT INTO course_program (course_id, program_id, year_level, semester, periods_per_week) VALUES (:course_id, :program_id, :year_level, :semester, :periods_per_week)');
@@ -160,7 +147,7 @@ try {
     // Fetch Existing Courses with assigned Programme Codes and Levels
     $coursesQuery = "
         SELECT c.id, c.course_code, c.course_name, u.fullname AS lecturer_name,
-               GROUP_CONCAT(DISTINCT CONCAT(p.program_code, ' (Yr ', cp.year_level, ', Sem ', cp.semester, ')') ORDER BY p.program_code SEPARATOR ', ') AS program_codes
+               STRING_AGG(DISTINCT CONCAT(p.program_code, ' (Yr ', cp.year_level, ', Sem ', cp.semester, ')'), ', ' ORDER BY CONCAT(p.program_code, ' (Yr ', cp.year_level, ', Sem ', cp.semester, ')')) AS program_codes
         FROM courses c
         LEFT JOIN users u ON c.lecturer_id = u.id
         LEFT JOIN course_program cp ON c.id = cp.course_id
@@ -185,9 +172,8 @@ try {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ReSchedule. - Manage Courses & Programmes</title>
-    <link rel="icon" type="image/jpeg" href="assets/reschedule-app-icon.jpeg">
-    <link rel="stylesheet" href="css/style.css?v=<?php echo (int) filemtime(__DIR__ . '/css/style.css'); ?>">
+    <title>Reschedule - Manage Courses & Programmes</title>
+    <link rel="stylesheet" href="css/style.css">
     <style>
         .checkbox-grid {
             display: grid;
@@ -254,7 +240,7 @@ try {
 <body class="dashboard-body">
 
     <nav class="navbar">
-        <div class="logo">ReSchedule<span>.</span></div>
+        <div class="logo">Reschedule<span>.</span></div>
         <div class="user-profile">
             <a href="timetable.php" class="card-link">&larr; Go to Timetable</a>
             <a href="dashboard.php" class="card-link">Dashboard</a>
@@ -400,7 +386,7 @@ try {
                                     </td>
                                     <td style="padding: 0.75rem; white-space: nowrap;">
                                         <a class="schedule-edit-link" href="manage_courses.php?edit_course=<?php echo (int) $cl['id']; ?>#course-form">Edit</a>
-                                        <form method="POST" style="display:inline" onsubmit="return confirm('Delete this course and remove all linked timetable entries?');">
+                                        <form method="POST" style="display:inline" onsubmit="return confirm('Delete this course? Courses with scheduled slots cannot be deleted.');">
                                             <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
                                             <input type="hidden" name="course_id" value="<?php echo (int) $cl['id']; ?>">
                                             <button type="submit" name="delete_course" class="btn-delete">Delete</button>

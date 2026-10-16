@@ -150,9 +150,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>ReSchedule. - Publish Schedule</title>
-    <link rel="icon" type="image/jpeg" href="assets/reschedule-app-icon.jpeg">
-    <link rel="stylesheet" href="css/style.css?v=<?php echo (int) filemtime(__DIR__ . '/css/style.css'); ?>">
+    <title>Reschedule - Publish Schedule</title>
+    <link rel="stylesheet" href="css/style.css">
     <style>
         .checkbox-grid {
             display: grid;
@@ -175,7 +174,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 <body class="dashboard-body">
     <nav class="navbar">
-        <div class="logo">ReSchedule<span>.</span></div>
+        <div class="logo">Reschedule<span>.</span></div>
         <div class="user-profile">
             <a href="timetable.php" class="card-link">&larr; Timetable</a>
             <a href="dashboard.php" class="card-link">Dashboard</a>

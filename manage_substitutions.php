@@ -23,12 +23,23 @@ function suggestSubstitutes(PDO $pdo, array $slot): array
     $candidates = $pdo->prepare("
         SELECT u.id, u.fullname,
                (SELECT COUNT(*) FROM schedules s2 JOIN courses c2 ON s2.course_id = c2.id WHERE COALESCE(s2.lecturer_id, c2.lecturer_id) = u.id AND s2.day_of_week = :day) AS day_load,
-               (SELECT COUNT(*) FROM courses c3 WHERE c3.lecturer_id = u.id AND c3.id IN (SELECT course_id FROM course_program WHERE program_id = :program_id)) AS teaches_in_programme,
-               EXISTS(SELECT 1 FROM schedules s3 JOIN courses c4 ON s3.course_id = c4.id WHERE COALESCE(s3.lecturer_id, c4.lecturer_id) = u.id AND s3.day_of_week = :day2 AND s3.start_time = :start_time) AS busy_at_slot,
-               EXISTS(SELECT 1 FROM lecturer_unavailability lu WHERE lu.lecturer_id = u.id AND lu.unavailable_date = :abs_date) AS also_absent
+               (SELECT COUNT(*) FROM courses c3 WHERE c3.lecturer_id = u.id AND c3.id IN (SELECT course_id FROM course_program WHERE program_id = :program_id)) AS teaches_in_programme
         FROM users u
         WHERE u.role = 'Lecturer' AND u.id != :original_id
-        HAVING busy_at_slot = 0 AND also_absent = 0
+          AND NOT EXISTS (
+              SELECT 1
+              FROM schedules s3
+              JOIN courses c4 ON s3.course_id = c4.id
+              WHERE COALESCE(s3.lecturer_id, c4.lecturer_id) = u.id
+                AND s3.day_of_week = :day2
+                AND s3.start_time = :start_time
+          )
+          AND NOT EXISTS (
+              SELECT 1
+              FROM lecturer_unavailability lu
+              WHERE lu.lecturer_id = u.id
+                AND lu.unavailable_date = :abs_date
+          )
         ORDER BY teaches_in_programme DESC, day_load ASC, u.fullname ASC
         LIMIT 4
     ");
@@ -63,13 +74,13 @@ try {
             // Auto-create a Pending substitution row for every class that lecturer
             // teaches on that weekday, so admins immediately see what needs covering.
             $dayName = date('l', strtotime($date));
-            $affected = $pdo->prepare('
+            $affected = $pdo->prepare("
                 SELECT s.id FROM schedules s
                 JOIN courses c ON s.course_id = c.id
-                WHERE COALESCE(s.lecturer_id, c.lecturer_id) = :lecturer_id AND s.day_of_week = :day AND s.type = "Class"
-            ');
+                WHERE COALESCE(s.lecturer_id, c.lecturer_id) = :lecturer_id AND s.day_of_week = :day AND s.type = 'Class'
+            ");
             $affected->execute([':lecturer_id' => $lecturerId, ':day' => $dayName]);
-            $insertSub = $pdo->prepare('INSERT IGNORE INTO substitutions (schedule_id, absence_date, original_lecturer_id, status) VALUES (:schedule_id, :date, :lecturer_id, "Pending")');
+            $insertSub = $pdo->prepare("INSERT INTO substitutions (schedule_id, absence_date, original_lecturer_id, status) VALUES (:schedule_id, :date, :lecturer_id, 'Pending') ON CONFLICT (schedule_id, absence_date) DO NOTHING");
             foreach ($affected->fetchAll(PDO::FETCH_COLUMN) as $scheduleId) {
                 $insertSub->execute([':schedule_id' => $scheduleId, ':date' => $date, ':lecturer_id' => $lecturerId]);
             }
@@ -84,7 +95,7 @@ try {
             if ($subId < 1 || $substituteId < 1) {
                 throw new RuntimeException('Choose a substitute lecturer.');
             }
-            $stmt = $pdo->prepare('UPDATE substitutions SET substitute_lecturer_id = :sub_id, status = "Assigned", created_by = :by WHERE id = :id');
+            $stmt = $pdo->prepare("UPDATE substitutions SET substitute_lecturer_id = :sub_id, status = 'Assigned', created_by = :by WHERE id = :id");
             $stmt->execute([':sub_id' => $substituteId, ':by' => $userId, ':id' => $subId]);
             $message = 'Substitute assigned.';
             $messageType = 'success';
@@ -101,8 +112,8 @@ try {
     $lecturers = $pdo->query("SELECT id, fullname FROM users WHERE role = 'Lecturer' ORDER BY fullname ASC")->fetchAll();
 
     $unavailabilityQuery = $role === 'Administrator'
-        ? 'SELECT lu.*, u.fullname FROM lecturer_unavailability lu JOIN users u ON lu.lecturer_id = u.id WHERE lu.unavailable_date >= CURDATE() ORDER BY lu.unavailable_date ASC'
-        : 'SELECT lu.*, u.fullname FROM lecturer_unavailability lu JOIN users u ON lu.lecturer_id = u.id WHERE lu.unavailable_date >= CURDATE() AND lu.lecturer_id = :uid ORDER BY lu.unavailable_date ASC';
+        ? 'SELECT lu.*, u.fullname FROM lecturer_unavailability lu JOIN users u ON lu.lecturer_id = u.id WHERE lu.unavailable_date >= CURRENT_DATE ORDER BY lu.unavailable_date ASC'
+        : 'SELECT lu.*, u.fullname FROM lecturer_unavailability lu JOIN users u ON lu.lecturer_id = u.id WHERE lu.unavailable_date >= CURRENT_DATE AND lu.lecturer_id = :uid ORDER BY lu.unavailable_date ASC';
     $unavailabilityStmt = $pdo->prepare($unavailabilityQuery);
     if ($role !== 'Administrator') {
         $unavailabilityStmt->execute([':uid' => $userId]);
@@ -122,7 +133,7 @@ try {
         LEFT JOIN programmes p ON s.program_id = p.id
         JOIN users ou ON sub.original_lecturer_id = ou.id
         LEFT JOIN users su ON sub.substitute_lecturer_id = su.id
-        WHERE sub.absence_date >= CURDATE()
+        WHERE sub.absence_date >= CURRENT_DATE
     ";
     if ($role !== 'Administrator') {
         $subQuery .= ' AND sub.original_lecturer_id = :uid';

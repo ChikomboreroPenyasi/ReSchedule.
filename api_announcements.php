@@ -7,7 +7,7 @@ try {
         "SELECT e.id,
                 e.title,
                 COALESCE(e.description, 'Academic notice') AS content,
-                DATE_FORMAT(e.start_datetime, '%Y-%m-%d') AS date,
+                TO_CHAR(e.start_datetime, 'YYYY-MM-DD') AS date,
                 COALESCE(u.fullname, 'Academic Office') AS author
          FROM events e
          LEFT JOIN users u ON u.id = e.created_by

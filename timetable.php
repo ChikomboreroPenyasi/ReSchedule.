@@ -65,9 +65,9 @@ try {
                 $room_id = $existingRoom['id'];
             } else {
                 // Dynamically insert new room if it doesn't exist yet
-                $createRoomStmt = $pdo->prepare("INSERT INTO rooms (room_name, capacity) VALUES (:room_name, 50)");
+                $createRoomStmt = $pdo->prepare("INSERT INTO rooms (room_name, capacity) VALUES (:room_name, 50) RETURNING id");
                 $createRoomStmt->execute([':room_name' => $room_name_input]);
-                $room_id = $pdo->lastInsertId();
+                $room_id = $createRoomStmt->fetchColumn();
             }
 
             // Conflict Detection 1: Room Double-booking Check
@@ -205,14 +205,13 @@ $daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ReSchedule. - Master Timetable</title>
-    <link rel="icon" type="image/jpeg" href="assets/reschedule-app-icon.jpeg">
-    <link rel="stylesheet" href="css/style.css?v=<?php echo (int) filemtime(__DIR__ . '/css/style.css'); ?>">
+    <title>Reschedule - Master Timetable</title>
+    <link rel="stylesheet" href="css/style.css">
 </head>
 <body class="dashboard-body">
 
     <nav class="navbar">
-        <div class="logo">ReSchedule<span>.</span></div>
+        <div class="logo">Reschedule<span>.</span></div>
         <div class="user-profile">
             <a href="dashboard.php" class="card-link">&larr; Back to Dashboard</a>
             <a href="logout.php" class="btn-logout">Log Out</a>

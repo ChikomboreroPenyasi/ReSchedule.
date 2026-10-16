@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: rescheduleweb
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: SUPABASE_DB_URL
+        sync: false

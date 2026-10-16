@@ -241,7 +241,6 @@ try {
     $calendarYear = (int) date('Y');
     $calendarStart = new DateTimeImmutable(sprintf('%04d-%02d-01', $calendarYear, $calendarMonth));
     $calendarDaysInMonth = (int) $calendarStart->format('t');
-    $calendarLeadingDays = (int) $calendarStart->format('N') - 1;
     $calendarEventsByDate = [];
 
     foreach ($class_schedules as $schedule) {
@@ -300,14 +299,13 @@ try {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ReSchedule. - Dashboard</title>
-    <link rel="icon" type="image/jpeg" href="assets/reschedule-app-icon.jpeg">
+    <title>Reschedule - Dashboard</title>
     <link rel="stylesheet" href="css/style.css?v=<?php echo (int) filemtime(__DIR__ . '/css/style.css'); ?>">
 </head>
 <body class="dashboard-body">
 
     <nav class="navbar">
-        <div class="logo">ReSchedule<span>.</span></div>
+        <div class="logo">Reschedule<span>.</span></div>
         <div class="user-profile">
             <button type="button" class="sidebar-toggle" id="sidebarToggle" aria-controls="dashboardSidebar" aria-expanded="false">☰ Menu</button>
             <span><strong><?php echo htmlspecialchars($fullname); ?></strong> (<?php echo htmlspecialchars($role); ?>)</span>
@@ -382,7 +380,7 @@ try {
         
         <header class="welcome-banner">
             <div>
-                <span class="eyebrow">ReSchedule. portal</span>
+                <span class="eyebrow">Reschedule portal</span>
                 <h1>Welcome, <?php echo htmlspecialchars($fullname); ?>!</h1>
                 <p><?php if ($role === 'Student'): ?>Your classes, assessments, and schedule requests for <?php echo htmlspecialchars($programme_name); ?>, Year <?php echo $enrolled_year; ?>, Semester <?php echo $enrolled_semester; ?> in one place.<?php else: ?>Keep your timetable, courses, resources, and requests moving from one place.<?php endif; ?></p>
             </div>
@@ -443,9 +441,6 @@ try {
                     <?php endforeach; ?>
                 </div>
                 <div class="calendar-grid">
-                    <?php for ($blankDay = 0; $blankDay < $calendarLeadingDays; $blankDay++): ?>
-                        <div class="calendar-day calendar-day-empty" aria-hidden="true"></div>
-                    <?php endfor; ?>
                     <?php foreach ($calendarDays as $dayInfo): ?>
                         <div class="calendar-day <?php echo !empty($dayInfo['events']) ? 'has-events' : ''; ?>">
                             <span class="calendar-day-number"><?php echo $dayInfo['day']; ?></span>

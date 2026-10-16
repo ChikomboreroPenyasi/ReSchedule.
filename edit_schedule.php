@@ -154,9 +154,9 @@ try {
                     $updateCourse = $pdo->prepare("UPDATE courses SET course_code = :course_code, course_name = :course_name WHERE id = :id");
                     $updateCourse->execute([':course_code' => $course_code, ':course_name' => $course_name, ':id' => $course_id]);
                 } else {
-                    $insertCourse = $pdo->prepare("INSERT INTO courses (course_code, course_name) VALUES (:course_code, :course_name)");
+                    $insertCourse = $pdo->prepare("INSERT INTO courses (course_code, course_name) VALUES (:course_code, :course_name) RETURNING id");
                     $insertCourse->execute([':course_code' => $course_code, ':course_name' => $course_name]);
-                    $course_id = $pdo->lastInsertId();
+                    $course_id = $insertCourse->fetchColumn();
                 }
 
                 // 3. Update 'schedules' table across both foreign keys and text columns
@@ -249,14 +249,13 @@ try {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ReSchedule. - Edit Schedule Entry</title>
-    <link rel="icon" type="image/jpeg" href="assets/reschedule-app-icon.jpeg">
-    <link rel="stylesheet" href="css/style.css?v=<?php echo (int) filemtime(__DIR__ . '/css/style.css'); ?>">
+    <title>Reschedule - Edit Schedule Entry</title>
+    <link rel="stylesheet" href="css/style.css">
 </head>
 <body class="dashboard-body">
 
     <nav class="navbar">
-        <div class="logo">ReSchedule<span>.</span></div>
+        <div class="logo">Reschedule<span>.</span></div>
         <div class="user-profile">
             <button type="button" class="sidebar-toggle" id="sidebarToggle" aria-controls="scheduleSidebar" aria-expanded="false">☰ Menu</button>
             <a href="timetable.php" class="card-link">&larr; Timetable</a>
