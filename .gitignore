@@ -8,3 +8,4 @@ student-android/*.iml
 
 # PHP / local env
 .env
+nvidia_test.php

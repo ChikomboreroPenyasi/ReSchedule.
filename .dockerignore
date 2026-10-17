@@ -6,3 +6,4 @@ student-android
 vendor
 node_modules
 *.log
+nvidia_test.php
