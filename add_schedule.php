@@ -174,7 +174,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 <body class="dashboard-body">
     <nav class="navbar">
-        <div class="logo">Reschedule<span>.</span></div>
+        <div class="logo"><img src="assets/reschedule-logo.png" alt="ReSchedule. Campus Timetable System"></div>
         <div class="user-profile">
             <a href="timetable.php" class="card-link">&larr; Timetable</a>
             <a href="dashboard.php" class="card-link">Dashboard</a>

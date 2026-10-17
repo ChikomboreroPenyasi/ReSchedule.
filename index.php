@@ -10,7 +10,7 @@
 </head>
 <body>
     <header class="navbar">
-        <div class="logo">ReSchedule<span>.</span></div>
+        <div class="logo"><img src="assets/reschedule-logo.png" alt="ReSchedule. Campus Timetable System"></div>
         <nav class="nav-links" aria-label="Main navigation">
             <a href="#features">Features</a>
             <a href="#platforms">Platforms</a>

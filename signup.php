@@ -86,7 +86,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 <body class="auth-page">
     <div class="auth-shell">
         <aside class="auth-visual">
-            <div class="brand">ReSchedule<span>.</span></div>
+            <div class="brand"><img src="assets/reschedule-logo.png" alt="ReSchedule. Campus Timetable System"></div>
             <h2>Join the university timetable system.</h2>
             <p>Create your account and get instant access to your academic schedule, campus resources, and timetable updates.</p>
 

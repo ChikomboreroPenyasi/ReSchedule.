@@ -179,7 +179,7 @@ try {
 </head>
 <body class="dashboard-body">
 <nav class="navbar">
-    <div class="logo">ReSchedule<span>.</span></div>
+    <div class="logo"><img src="assets/reschedule-logo.png" alt="ReSchedule. Campus Timetable System"></div>
     <div class="user-profile">
         <a href="dashboard.php" class="card-link">&larr; Dashboard</a>
         <a href="logout.php" class="btn-logout">Log Out</a>

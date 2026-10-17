@@ -211,7 +211,7 @@ $daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday
 <body class="dashboard-body">
 
     <nav class="navbar">
-        <div class="logo">Reschedule<span>.</span></div>
+        <div class="logo"><img src="assets/reschedule-logo.png" alt="ReSchedule. Campus Timetable System"></div>
         <div class="user-profile">
             <a href="dashboard.php" class="card-link">&larr; Back to Dashboard</a>
             <a href="logout.php" class="btn-logout">Log Out</a>

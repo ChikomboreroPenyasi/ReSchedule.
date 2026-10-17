@@ -305,7 +305,7 @@ try {
 <body class="dashboard-body">
 
     <nav class="navbar">
-        <div class="logo">Reschedule<span>.</span></div>
+        <div class="logo"><img src="assets/reschedule-logo.png" alt="ReSchedule. Campus Timetable System"></div>
         <div class="user-profile">
             <button type="button" class="sidebar-toggle" id="sidebarToggle" aria-controls="dashboardSidebar" aria-expanded="false">☰ Menu</button>
             <span><strong><?php echo htmlspecialchars($fullname); ?></strong> (<?php echo htmlspecialchars($role); ?>)</span>

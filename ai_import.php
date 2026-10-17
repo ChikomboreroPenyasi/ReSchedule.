@@ -152,7 +152,7 @@ try {
 ?>
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>AI Timetable Import</title><link rel="stylesheet" href="css/style.css"></head>
-<body class="dashboard-body"><nav class="navbar"><div class="logo">Reschedule<span>.</span></div><div class="user-profile"><a href="dashboard.php" class="card-link">&larr; Dashboard</a><a href="logout.php" class="btn-logout">Log Out</a></div></nav>
+<body class="dashboard-body"><nav class="navbar"><div class="logo"><img src="assets/reschedule-logo.png" alt="ReSchedule. Campus Timetable System"></div><div class="user-profile"><a href="dashboard.php" class="card-link">&larr; Dashboard</a><a href="logout.php" class="btn-logout">Log Out</a></div></nav>
 <main class="dashboard-container"><header class="welcome-banner"><div><span class="eyebrow">Administrator workspace</span><h1>AI timetable import</h1><p>Upload, review, and confirm a timetable document.</p></div></header>
 <?php if ($message): ?><div class="alert-box <?php echo htmlspecialchars($messageType); ?>"><?php echo htmlspecialchars($message); ?></div><?php endif; ?>
 <section class="dash-card"><h3>Analyse document</h3><form method="POST" enctype="multipart/form-data"><input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>"><input type="file" name="timetable_document" accept=".pdf,.csv,.txt,.png,.jpg,.jpeg" required><button class="btn-submit" name="analyse_document">Analyse timetable</button></form></section>

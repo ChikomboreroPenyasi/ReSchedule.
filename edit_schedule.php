@@ -255,7 +255,7 @@ try {
 <body class="dashboard-body">
 
     <nav class="navbar">
-        <div class="logo">Reschedule<span>.</span></div>
+        <div class="logo"><img src="assets/reschedule-logo.png" alt="ReSchedule. Campus Timetable System"></div>
         <div class="user-profile">
             <button type="button" class="sidebar-toggle" id="sidebarToggle" aria-controls="scheduleSidebar" aria-expanded="false">☰ Menu</button>
             <a href="timetable.php" class="card-link">&larr; Timetable</a>

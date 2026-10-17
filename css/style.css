@@ -97,6 +97,12 @@ textarea:focus-visible {
     color: var(--gold);
 }
 
+.logo img {
+    display: block;
+    width: clamp(145px, 18vw, 210px);
+    height: auto;
+}
+
 .nav-links {
     display: flex;
     align-items: center;
@@ -531,6 +537,13 @@ footer {
 
 .auth-visual .brand span {
     color: var(--gold-soft);
+}
+
+.auth-visual .brand img {
+    display: block;
+    width: min(260px, 100%);
+    height: auto;
+    filter: brightness(0) invert(1);
 }
 
 .auth-visual h2 {
@@ -2266,6 +2279,10 @@ footer {
 
     .navbar .logo {
         font-size: 1.45rem;
+    }
+
+    .navbar .logo img {
+        width: clamp(120px, 40vw, 180px);
     }
 
     .nav-links,
