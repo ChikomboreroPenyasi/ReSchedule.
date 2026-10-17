@@ -40,6 +40,8 @@ ALTER TABLE public.reschedule_requests
     ADD COLUMN IF NOT EXISTS review_note TEXT,
     ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ,
     ALTER COLUMN created_at SET DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE public.reschedule_requests
+    ALTER COLUMN preferred_time TYPE TEXT USING preferred_time::TEXT;
 ALTER TABLE public.substitutions
     ADD COLUMN IF NOT EXISTS notes TEXT,
     ALTER COLUMN created_at SET DEFAULT CURRENT_TIMESTAMP,

@@ -41,7 +41,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     } else {
     $schedule_id    = intval($_POST['schedule_id'] ?? 0);
     $reason         = trim($_POST['reason'] ?? '');
-    $preferred_time = trim($_POST['preferred_time'] ?? '');
+    $preferredTimeInput = trim((string) ($_POST['preferred_time'] ?? ''));
+    $preferred_time = $preferredTimeInput !== '' ? $preferredTimeInput : null;
 
     if ($schedule_id > 0 && !empty($reason)) {
         try {
@@ -89,8 +90,8 @@ try {
     // 1. Fetch CA & Exam Schedules
     if ($role === 'Student' && $program_id) {
         $stmt_ca = $pdo->prepare("
-            SELECT s.*, COALESCE(c.course_code, s.course_code) AS course_code, 
-                   COALESCE(c.course_name, s.course_name) AS course_name, r.room_name 
+            SELECT s.*, COALESCE(c.course_code, s.course_code, 'Course') AS course_code,
+                   COALESCE(c.course_name, s.course_name, 'Course details unavailable') AS course_name, r.room_name
             FROM schedules s
             LEFT JOIN courses c ON s.course_id = c.id
             LEFT JOIN rooms r ON s.room_id = r.id
@@ -102,8 +103,8 @@ try {
         $stmt_ca->execute([':program_id' => $program_id, ':year_level' => $enrolled_year, ':semester' => $enrolled_semester, ':mapped_program_id' => $program_id, ':mapped_year_level' => $enrolled_year, ':mapped_semester' => $enrolled_semester]);
     } else {
         $stmt_ca = $pdo->query("
-            SELECT s.*, COALESCE(c.course_code, s.course_code) AS course_code, 
-                   COALESCE(c.course_name, s.course_name) AS course_name, r.room_name 
+            SELECT s.*, COALESCE(c.course_code, s.course_code, 'Course') AS course_code,
+                   COALESCE(c.course_name, s.course_name, 'Course details unavailable') AS course_name, r.room_name
             FROM schedules s
             LEFT JOIN courses c ON s.course_id = c.id
             LEFT JOIN rooms r ON s.room_id = r.id
@@ -116,8 +117,8 @@ try {
     // 2. Fetch Regular Class Schedules
     if ($role === 'Student' && $program_id) {
         $stmt_class = $pdo->prepare("
-            SELECT s.*, COALESCE(c.course_code, s.course_code) AS course_code, 
-                   COALESCE(c.course_name, s.course_name) AS course_name, r.room_name 
+            SELECT s.*, COALESCE(c.course_code, s.course_code, 'Course') AS course_code,
+                   COALESCE(c.course_name, s.course_name, 'Course details unavailable') AS course_name, r.room_name
             FROM schedules s
             LEFT JOIN courses c ON s.course_id = c.id
             LEFT JOIN rooms r ON s.room_id = r.id
@@ -132,8 +133,8 @@ try {
         $stmt_class->execute([':program_id' => $program_id, ':year_level' => $enrolled_year, ':semester' => $enrolled_semester, ':mapped_program_id' => $program_id, ':mapped_year_level' => $enrolled_year, ':mapped_semester' => $enrolled_semester]);
     } else {
         $stmt_class = $pdo->query("
-            SELECT s.*, COALESCE(c.course_code, s.course_code) AS course_code, 
-                   COALESCE(c.course_name, s.course_name) AS course_name, r.room_name 
+            SELECT s.*, COALESCE(c.course_code, s.course_code, 'Course') AS course_code,
+                   COALESCE(c.course_name, s.course_name, 'Course details unavailable') AS course_name, r.room_name
             FROM schedules s
             LEFT JOIN courses c ON s.course_id = c.id
             LEFT JOIN rooms r ON s.room_id = r.id
@@ -378,7 +379,7 @@ try {
 
         <main class="dashboard-main">
         <div class="dashboard-container">
-        
+
         <header class="welcome-banner">
             <div>
                 <span class="eyebrow">Reschedule portal</span>

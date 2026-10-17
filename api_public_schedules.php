@@ -60,8 +60,8 @@ try {
     }
 
     $stmt = $pdo->query("
-        SELECT COALESCE(c.course_code, s.course_code) AS course_code,
-               COALESCE(c.course_name, s.course_name) AS course_name,
+        SELECT COALESCE(c.course_code, s.course_code, 'Course') AS course_code,
+               COALESCE(c.course_name, s.course_name, 'Course details unavailable') AS course_name,
                s.day_of_week, s.start_time, s.end_time, s.type
         FROM schedules s
         LEFT JOIN courses c ON c.id = s.course_id

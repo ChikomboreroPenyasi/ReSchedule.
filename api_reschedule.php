@@ -18,7 +18,8 @@ try {
         $student_id     = intval($jsonInput['student_id'] ?? $_POST['student_id'] ?? 0);
         $schedule_id    = intval($jsonInput['schedule_id'] ?? $_POST['schedule_id'] ?? 0);
         $reason         = trim($jsonInput['reason'] ?? $_POST['reason'] ?? '');
-        $preferred_time = trim($jsonInput['preferred_time'] ?? $_POST['preferred_time'] ?? '');
+        $preferredTimeInput = trim((string) ($jsonInput['preferred_time'] ?? $_POST['preferred_time'] ?? ''));
+        $preferred_time = $preferredTimeInput !== '' ? $preferredTimeInput : null;
 
         if ($student_id <= 0 || $schedule_id <= 0 || empty($reason)) {
             ob_clean();
