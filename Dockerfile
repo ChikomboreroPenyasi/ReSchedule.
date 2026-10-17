@@ -15,4 +15,4 @@ COPY docker-entrypoint.sh /usr/local/bin/render-entrypoint
 RUN chmod +x /usr/local/bin/render-entrypoint
 
 EXPOSE 80
-CMD ["render-entrypoint"]
+CMD ["/usr/local/bin/render-entrypoint"]
