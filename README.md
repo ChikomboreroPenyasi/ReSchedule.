@@ -10,7 +10,7 @@ The site runs on Render's free Docker web service and connects directly to Supab
 4. Push this repository to GitHub, then in Render choose **New > Blueprint** and select the repository. Render reads [`render.yaml`](./render.yaml) and builds the Docker service.
 5. In Render, set `SUPABASE_DB_URL` to the PostgreSQL connection URI from Supabase. Use the **Session pooler** connection string if the direct database host is not reachable from Render. Keep `sslmode=require`; do not commit the URI or put it in source files.
 6. Deploy the service. Render will provide a `*.onrender.com` URL.
-7. To enable AI timetable import, also set `GEMINI_API_KEY` in the Render service environment. `GEMINI_MODEL` is optional and defaults to `gemini-2.5-flash`.
+7. To enable AI timetable import, set `GEMINI_API_KEY` in the Render service environment (Render marks it as a secret). `GEMINI_MODEL` is optional and defaults to `gemini-2.5-flash`.
 
 The repository includes a Dockerfile that installs PDO PostgreSQL and configures Apache to listen on Render's assigned port. Supabase is persistent storage; Render's local filesystem is not persistent. Uploaded files and other generated local files must not be treated as durable.
 
@@ -20,7 +20,7 @@ Run Apache from `C:\xampp\htdocs\ReScheduleWeb` and enable `extension=pdo_pgsql`
 
 ## AI timetable import
 
-The importer uses Gemini only. Create an API key in Google AI Studio and set `GEMINI_API_KEY` in the PHP/Apache server environment. The default model is `gemini-2.5-flash`; set `GEMINI_MODEL` to use another available Gemini model.
+The importer sends PDF, image, CSV, and text uploads to Gemini for extraction. Create an API key in Google AI Studio and set `GEMINI_API_KEY` in the PHP/Apache server environment. The default model is `gemini-2.5-flash`; set `GEMINI_MODEL` to use another available Gemini model.
 
 An NVIDIA key was previously present in a local diagnostic file. Revoke/rotate it if you have not already done so.
 

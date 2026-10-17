@@ -18,6 +18,8 @@ function geminiParts(array $content): array {
 	foreach ($content as $item) {
 		if (($item['type'] ?? '') === 'text') {
 			$parts[] = ['text' => $item['text']];
+		} elseif (($item['type'] ?? '') === 'inline_data' && in_array($item['mime_type'] ?? '', ['application/pdf', 'image/png', 'image/jpeg'], true) && isset($item['data'])) {
+			$parts[] = ['inlineData' => ['mimeType' => $item['mime_type'], 'data' => $item['data']]];
 		} elseif (($item['type'] ?? '') === 'image_url' && preg_match('/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/s', $item['image_url']['url'] ?? '', $matches)) {
 			$parts[] = ['inlineData' => ['mimeType' => $matches[1], 'data' => $matches[2]]];
 		}
@@ -30,18 +32,6 @@ function aiResponseText(string $response): string {
 	if (isset($json['error']['message'])) throw new RuntimeException($json['error']['message']);
 	$parts = $json['candidates'][0]['content']['parts'] ?? [];
 	return implode('', array_column($parts, 'text'));
-}
-
-// Extract PDF text locally via `pdftotext` (Poppler) before sending it to Gemini.
-// Install: https://github.com/oschwartz10612/poppler-windows and add its bin folder to PATH.
-// Returns '' if the tool is missing or the PDF has no embedded text (e.g. a scan).
-function pdfToText(string $path): string {
-	$out = tempnam(sys_get_temp_dir(), 'pdftxt') . '.txt';
-	@exec('pdftotext ' . escapeshellarg($path) . ' ' . escapeshellarg($out) . ' 2>&1', $lines, $code);
-	if ($code !== 0 || !file_exists($out)) return '';
-	$text = file_get_contents($out);
-	@unlink($out);
-	return trim($text);
 }
 
 function callAI(array $content): string {
@@ -97,9 +87,10 @@ try {
 			$prompt = 'Extract every timetable row. Return JSON only as {"rows":[{"program_code":"","course_code":"","course_name":"","year_level":1,"semester":1,"day_of_week":"Monday","start_time":"08:00","end_time":"09:00","room_name":"","type":"Class"}]}. Decode values like 4,2 as year 4 semester 2. Apply merged time headers to following rows. Use Not assigned for unknown values. Do not explain.';
 
 			if ($mime === 'application/pdf') {
-				$text = pdfToText($file['tmp_name']);
-				if ($text === '') throw new RuntimeException('Could not extract text from this PDF (it may be a scanned image). Install poppler\'s pdftotext, or export/upload the timetable as PNG/JPG instead.');
-				$content = [['type' => 'text', 'text' => $prompt . "\n\nDocument content:\n" . $text]];
+				$content = [
+					['type' => 'text', 'text' => $prompt],
+					['type' => 'inline_data', 'mime_type' => $mime, 'data' => base64_encode(file_get_contents($file['tmp_name']))],
+				];
 			} elseif (str_starts_with($mime, 'image/')) {
 				$content = [
 					['type' => 'text', 'text' => $prompt],

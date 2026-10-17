@@ -501,9 +501,9 @@ try {
             <article class="student-focus-card">
                 <span class="focus-kicker">Next assessment</span>
                 <?php if ($next_assessment): ?>
-                    <span class="badge <?php echo ($next_assessment['type'] === 'Exam') ? 'badge-exam' : 'badge-ca'; ?>"><?php echo htmlspecialchars($next_assessment['type']); ?></span>
-                    <h3><?php echo htmlspecialchars($next_assessment['course_code']); ?> - <?php echo htmlspecialchars($next_assessment['course_name']); ?></h3>
-                    <p><?php echo htmlspecialchars($next_assessment['date']); ?> - <?php echo htmlspecialchars($next_assessment['start_time']); ?> to <?php echo htmlspecialchars($next_assessment['end_time']); ?></p>
+                    <span class="badge <?php echo (($next_assessment['type'] ?? '') === 'Exam') ? 'badge-exam' : 'badge-ca'; ?>"><?php echo htmlspecialchars((string) ($next_assessment['type'] ?? 'Assessment'), ENT_QUOTES, 'UTF-8'); ?></span>
+                    <h3><?php echo htmlspecialchars((string) ($next_assessment['course_code'] ?? 'Course'), ENT_QUOTES, 'UTF-8'); ?> - <?php echo htmlspecialchars((string) ($next_assessment['course_name'] ?? 'Course details unavailable'), ENT_QUOTES, 'UTF-8'); ?></h3>
+                    <p><?php echo htmlspecialchars((string) ($next_assessment['date'] ?? 'Date to be confirmed'), ENT_QUOTES, 'UTF-8'); ?> - <?php echo htmlspecialchars((string) ($next_assessment['start_time'] ?? 'Time to be confirmed'), ENT_QUOTES, 'UTF-8'); ?> to <?php echo htmlspecialchars((string) ($next_assessment['end_time'] ?? 'Time to be confirmed'), ENT_QUOTES, 'UTF-8'); ?></p>
                     <span class="focus-location"><?php echo htmlspecialchars($next_assessment['room_name'] ?? 'Venue to be confirmed'); ?></span>
                 <?php else: ?>
                     <h3>No upcoming assessment</h3>
