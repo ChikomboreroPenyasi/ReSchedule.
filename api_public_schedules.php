@@ -59,7 +59,14 @@ try {
         exit();
     }
 
-    $stmt = $pdo->query("SELECT course_code, course_name, day_of_week, start_time, end_time, type FROM schedules ORDER BY id DESC");
+    $stmt = $pdo->query("
+        SELECT COALESCE(c.course_code, s.course_code) AS course_code,
+               COALESCE(c.course_name, s.course_name) AS course_name,
+               s.day_of_week, s.start_time, s.end_time, s.type
+        FROM schedules s
+        LEFT JOIN courses c ON c.id = s.course_id
+        ORDER BY s.id DESC
+    ");
     echo json_encode(['status' => 'success', 'data' => $stmt->fetchAll()]);
 } catch (PDOException $e) {
     http_response_code(500);

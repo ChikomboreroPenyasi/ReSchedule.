@@ -16,6 +16,8 @@ $role = $_SESSION['role'] ?? 'Student';
 
 $message = "";
 $statusClass = "";
+$courses = [];
+$schedules = [];
 
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
@@ -171,8 +173,8 @@ try {
     // Fetch Master Schedule
     $scheduleQuery = "
         SELECT s.id, s.day_of_week, 
-               TIME_FORMAT(s.start_time, '%H:%i') AS start_time,
-               TIME_FORMAT(s.end_time, '%H:%i') AS end_time,
+               TO_CHAR(s.start_time, 'HH24:MI') AS start_time,
+               TO_CHAR(s.end_time, 'HH24:MI') AS end_time,
                c.course_code, c.course_name, r.room_name, u.fullname AS lecturer_name
         FROM schedules s
         JOIN courses c ON s.course_id = c.id
