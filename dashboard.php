@@ -24,6 +24,8 @@ $enrolled_semester = 1;
 $today_classes = 0;
 $next_class = null;
 $next_assessment = null;
+$notifications = [];
+$calendarDays = [];
 $message = '';
 $message_type = 'danger';
 
@@ -186,7 +188,6 @@ try {
     }
     $today_classes = count(array_filter($class_schedules, fn ($schedule) => ($schedule['day_of_week'] ?? '') === date('l')));
 
-    $notifications = [];
     if ($role === 'Student') {
         if ($next_class) {
             $notifications[] = [
