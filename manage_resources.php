@@ -74,13 +74,14 @@ try {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reschedule - Manage Resources</title>
-    <link rel="stylesheet" href="css/style.css">
+    <title>ReSchedule. - Manage Resources</title>
+    <link rel="icon" type="image/jpeg" href="assets/reschedule-app-icon.jpeg">
+    <link rel="stylesheet" href="css/style.css?v=<?php echo (int) filemtime(__DIR__ . '/css/style.css'); ?>">
 </head>
 <body class="dashboard-body">
 
     <nav class="navbar">
-        <div class="logo">Reschedule<span>.</span></div>
+        <div class="logo">ReSchedule<span>.</span></div>
         <div class="user-profile">
             <a href="dashboard.php" class="card-link">&larr; Back to Dashboard</a>
             <a href="logout.php" class="btn-logout">Log Out</a>
@@ -120,7 +121,7 @@ try {
                 <hr style="margin: 1.5rem 0; border: 0; border-top: 1px solid #e2e8f0;">
 
                 <h4>Existing Rooms</h4>
-                <ul style="list-style: none; margin-top: 0.5rem;">
+                        <ul style="list-style: none; margin-top: 0.5rem;">
                     <?php if (empty($rooms)): ?>
                         <li style="color: #64748b; font-size: 0.875rem;">No rooms added yet.</li>
                     <?php endif; ?>

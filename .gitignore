@@ -1,0 +1,10 @@
+# Android build output / IDE state
+student-android/.gradle/
+student-android/app/build/
+student-android/build/
+student-android/.idea/
+student-android/local.properties
+student-android/*.iml
+
+# PHP / local env
+.env

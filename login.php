@@ -12,7 +12,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $error = "Please fill in all fields.";
     } else {
         try {
-            // Querying strictly using student_number column
             $stmt = $pdo->prepare("
                 SELECT * FROM users 
                 WHERE student_number = :input 
@@ -44,126 +43,57 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reschedule - Login</title>
-    <link rel="stylesheet" href="css/style.css">
-    <style>
-        body.auth-page {
-            background-color: #f8fafc;
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0;
-            font-family: system-ui, -apple-system, sans-serif;
-        }
-        .auth-container {
-            width: 100%;
-            max-width: 420px;
-            padding: 1rem;
-        }
-        .auth-card {
-            background: #ffffff;
-            border-radius: 12px;
-            padding: 2.5rem;
-            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
-            border: 1px solid #e2e8f0;
-        }
-        .auth-header {
-            text-align: center;
-            margin-bottom: 2rem;
-        }
-        .auth-header h2 {
-            margin: 0 0 0.5rem 0;
-            font-size: 1.75rem;
-            color: #0f172a;
-        }
-        .auth-header p {
-            margin: 0;
-            color: #64748b;
-            font-size: 0.9rem;
-        }
-        .form-group {
-            margin-bottom: 1.25rem;
-        }
-        .form-group label {
-            display: block;
-            margin-bottom: 0.5rem;
-            font-size: 0.875rem;
-            font-weight: 600;
-            color: #334155;
-        }
-        .form-group input {
-            width: 100%;
-            padding: 0.75rem 1rem;
-            border: 1px solid #cbd5e1;
-            border-radius: 8px;
-            font-size: 0.95rem;
-            box-sizing: border-box;
-        }
-        .form-group input:focus {
-            outline: none;
-            border-color: #2563eb;
-            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-        }
-        .btn-primary {
-            width: 100%;
-            padding: 0.75rem;
-            background-color: #0284c7;
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-weight: 600;
-            font-size: 1rem;
-            cursor: pointer;
-        }
-        .btn-primary:hover {
-            background-color: #0369a1;
-        }
-        .auth-footer {
-            margin-top: 1.5rem;
-            text-align: center;
-            font-size: 0.875rem;
-            color: #64748b;
-        }
-        .auth-footer a {
-            color: #2563eb;
-            text-decoration: none;
-            font-weight: 600;
-        }
-    </style>
+    <title>ReSchedule. | Login</title>
+    <link rel="icon" type="image/jpeg" href="assets/reschedule-app-icon.jpeg">
+    <link rel="stylesheet" href="css/style.css?v=<?php echo (int) filemtime(__DIR__ . '/css/style.css'); ?>">
 </head>
 <body class="auth-page">
-    <div class="auth-container">
-        <div class="auth-card">
-            <div class="auth-header">
-                <h2>Reschedule Login</h2>
-                <p>Access your timetable and course schedules</p>
+    <div class="auth-shell">
+        <aside class="auth-visual">
+            <div class="brand">ReSchedule<span>.</span></div>
+            <h2>Access your campus timetable.</h2>
+            <p>Review your schedule, manage room changes, and stay aligned with your academic week without extra confusion.</p>
+
+            <div class="auth-points">
+                <div><span>✓</span> Student and staff access in one place</div>
+                <div><span>✓</span> Clear weekly timetable visibility</div>
+                <div><span>✓</span> Faster request handling and updates</div>
             </div>
+        </aside>
 
-            <?php if (!empty($error)): ?>
-                <div style="background:#fee2e2; color:#991b1b; padding:0.75rem; border-radius:6px; margin-bottom:1.25rem; font-size:0.85rem; border: 1px solid #fca5a5;">
-                    <?php echo htmlspecialchars($error); ?>
-                </div>
-            <?php endif; ?>
-
-            <form action="login.php" method="POST">
-                <div class="form-group">
-                    <label for="username_or_student_number">Student Number / User ID</label>
-                    <input type="text" id="username_or_student_number" name="username_or_student_number" placeholder="Enter student number or ID" required>
+        <main class="auth-card">
+            <div class="auth-card-inner">
+                <div class="auth-header">
+                    <h2>Welcome back</h2>
+                    <p>Sign in to continue</p>
                 </div>
 
-                <div class="form-group">
-                    <label for="password">Password</label>
-                    <input type="password" id="password" name="password" placeholder="Enter password" required>
+                <?php if (!empty($error)): ?>
+                    <div class="alert-box error">
+                        <?php echo htmlspecialchars($error); ?>
+                    </div>
+                <?php endif; ?>
+
+                <form action="login.php" method="POST">
+                    <div class="form-group">
+                        <label for="username_or_student_number">Student Number / User ID</label>
+                        <input type="text" id="username_or_student_number" name="username_or_student_number" placeholder="Enter your student number or ID" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="password">Password</label>
+                        <input type="password" id="password" name="password" placeholder="Enter your password" required>
+                    </div>
+
+                    <button type="submit" class="btn-primary">Sign In</button>
+                </form>
+
+                <div class="auth-footer">
+                    Need an account? <a href="signup.php">Create one</a>
                 </div>
-
-                <button type="submit" class="btn-primary">Sign In</button>
-            </form>
-
-            <div class="auth-footer">
-                Don't have an account? <a href="signup.php">Create Account</a>
             </div>
-        </div>
+        </main>
     </div>
 </body>
 </html>
+

@@ -45,6 +45,15 @@ try {
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
     // Verifies against hashed password or fallback check
+    if ($user && ($user['role'] ?? '') !== 'Student') {
+        ob_clean();
+        echo json_encode([
+            'status'  => 'error',
+            'message' => 'This mobile app is available to students only'
+        ]);
+        exit();
+    }
+
     if ($user && (password_verify($password, $user['password_hash']) || $password === $user['password_hash'])) {
         ob_clean();
         echo json_encode([

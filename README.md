@@ -1,12 +1,29 @@
 # ReScheduleWeb
 
-## Check locally with XAMPP
+## Temporary free deployment (Render + Supabase)
 
-1. Copy this project folder to `C:\xampp\htdocs\ReScheduleWeb`.
-2. Start **Apache** and **MySQL** in the XAMPP Control Panel.
-3. Open `http://localhost/phpmyadmin`, create a database named `reschedule`, and import your MySQL schema/data tables.
-4. In `C:\xampp\php\php.ini`, enable `extension=pdo_mysql`, then restart Apache.
-5. The default local connection is `root` with an empty password. To use different values, set `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASS`, and `DB_PORT` in the Apache/PHP environment.
-6. Open http://localhost/ReScheduleWeb/ in a browser and test authentication and schedule workflows.
+The site runs on Render's free Docker web service and connects directly to Supabase PostgreSQL. Free Render services sleep after inactivity, so the first page load after sleeping can take about a minute. This setup is for a demo, not an official or reliability-sensitive deployment.
 
-The UI uses relative stylesheet and script paths, so it works from the XAMPP subfolder without changing application routes. The application now uses PDO MySQL and no longer requires the PostgreSQL or Supabase connection. Keep database credentials outside version control before deploying to a shared university server.
+1. In Supabase, first import the existing application schema and data. Then open **SQL Editor** and run [`database/supabase_migration.sql`](./database/supabase_migration.sql). This migration adapts that existing schema for the PHP app; it does not create a new, empty database schema.
+2. Push this repository to GitHub, then in Render choose **New > Blueprint** and select the repository. Render reads [`render.yaml`](./render.yaml) and builds the Docker service.
+3. In Render, set `SUPABASE_DB_URL` to the PostgreSQL connection URI from Supabase. Use the **Session pooler** connection string if the direct database host is not reachable from Render. Keep `sslmode=require`; do not commit the URI or put it in source files.
+4. Deploy the service. Render will provide a `*.onrender.com` URL.
+5. To enable AI timetable import, also set `GEMINI_API_KEY` in the Render service environment. `GEMINI_MODEL` is optional and defaults to `gemini-2.5-flash`.
+
+The repository includes a Dockerfile that installs PDO PostgreSQL and configures Apache to listen on Render's assigned port. Supabase is persistent storage; Render's local filesystem is not persistent. Uploaded files and other generated local files must not be treated as durable.
+
+## Local XAMPP
+
+Run Apache from `C:\xampp\htdocs\ReScheduleWeb` and enable `extension=pdo_pgsql` in `C:\xampp\php\php.ini`. Set `SUPABASE_DB_URL` in the Apache/PHP environment to the same PostgreSQL connection URI. The app no longer supports MySQL/MariaDB.
+
+## AI timetable import
+
+The importer uses Gemini only. Create an API key in Google AI Studio and set `GEMINI_API_KEY` in the PHP/Apache server environment. The default model is `gemini-2.5-flash`; set `GEMINI_MODEL` to use another available Gemini model.
+
+An NVIDIA key was previously present in a local diagnostic file. Revoke/rotate it if you have not already done so.
+
+## Timetable generation and substitute coverage
+
+Administrator dashboard links provide draft timetable generation and publishing. Set each course's weekly session count under its programme assignment in Manage Courses before generating. Drafts are reviewed before publishing and use the programme, year, semester, lecturer, and room constraints.
+
+Administrators and lecturers can open Substitute Coverage to report lecturer absences; administrators can assign coverage. The Supabase migration prepares the support tables, sequence defaults, schedule lecturer override, and course session-count column.

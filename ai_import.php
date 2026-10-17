@@ -1,5 +1,6 @@
 <?php
 session_start();
+set_time_limit(210);
 require_once 'db.php';
 
 if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'Administrator') {
@@ -12,10 +13,54 @@ $message = '';
 $messageType = '';
 $preview = $_SESSION['ai_import_preview'] ?? [];
 
-function geminiText(string $response): string {
+function geminiParts(array $content): array {
+	$parts = [];
+	foreach ($content as $item) {
+		if (($item['type'] ?? '') === 'text') {
+			$parts[] = ['text' => $item['text']];
+		} elseif (($item['type'] ?? '') === 'image_url' && preg_match('/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/s', $item['image_url']['url'] ?? '', $matches)) {
+			$parts[] = ['inlineData' => ['mimeType' => $matches[1], 'data' => $matches[2]]];
+		}
+	}
+	return $parts;
+}
+
+function aiResponseText(string $response): string {
 	$json = json_decode($response, true);
 	if (isset($json['error']['message'])) throw new RuntimeException($json['error']['message']);
-	return $json['candidates'][0]['content']['parts'][0]['text'] ?? '';
+	$parts = $json['candidates'][0]['content']['parts'] ?? [];
+	return implode('', array_column($parts, 'text'));
+}
+
+// Extract PDF text locally via `pdftotext` (Poppler) before sending it to Gemini.
+// Install: https://github.com/oschwartz10612/poppler-windows and add its bin folder to PATH.
+// Returns '' if the tool is missing or the PDF has no embedded text (e.g. a scan).
+function pdfToText(string $path): string {
+	$out = tempnam(sys_get_temp_dir(), 'pdftxt') . '.txt';
+	@exec('pdftotext ' . escapeshellarg($path) . ' ' . escapeshellarg($out) . ' 2>&1', $lines, $code);
+	if ($code !== 0 || !file_exists($out)) return '';
+	$text = file_get_contents($out);
+	@unlink($out);
+	return trim($text);
+}
+
+function callAI(array $content): string {
+	$key = getenv('GEMINI_API_KEY');
+	if (!$key) throw new RuntimeException('GEMINI_API_KEY is not configured on the server.');
+	$model = getenv('GEMINI_MODEL') ?: 'gemini-2.5-flash';
+	$url = 'https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode($model) . ':generateContent?key=' . rawurlencode($key);
+	$payload = ['contents' => [['role' => 'user', 'parts' => geminiParts($content)]], 'generationConfig' => ['temperature' => 0, 'responseMimeType' => 'application/json']];
+	$ch = curl_init($url);
+	curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => json_encode($payload), CURLOPT_HTTPHEADER => ['Content-Type: application/json'], CURLOPT_RETURNTRANSFER => true, CURLOPT_CONNECTTIMEOUT => 15, CURLOPT_TIMEOUT => 180]);
+	$response = curl_exec($ch); $error = curl_error($ch); $errorCode = curl_errno($ch); $status = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+	if ($response === false || $error) {
+		if ($errorCode === CURLE_OPERATION_TIMEDOUT) throw new RuntimeException('Gemini took too long to analyse this document. Try a smaller file or a clearer crop of the timetable.');
+		throw new RuntimeException('Gemini request failed: ' . ($error ?: 'no response'));
+	}
+	if ($status < 200 || $status >= 300) throw new RuntimeException('Gemini request failed: ' . (json_decode($response, true)['error']['message'] ?? "HTTP $status"));
+	$text = aiResponseText($response);
+	if (trim($text) === '') throw new RuntimeException('Gemini returned an empty response.');
+	return $text;
 }
 
 function importRows(string $text): array {
@@ -27,7 +72,7 @@ function importRows(string $text): array {
 	}
 	if (isset($data['rows']) && is_array($data['rows'])) return $data['rows'];
 	if (is_array($data) && array_is_list($data)) return $data;
-	throw new RuntimeException('Gemini returned no usable timetable rows.');
+	throw new RuntimeException('The model returned no usable timetable rows.');
 }
 
 function valueOf(array $row, array $keys, $fallback = '') {
@@ -49,20 +94,24 @@ try {
 			if ($file['size'] > 10 * 1024 * 1024) throw new RuntimeException('The document must be 10 MB or smaller.');
 			$mime = (new finfo(FILEINFO_MIME_TYPE))->file($file['tmp_name']);
 			if (!in_array($mime, ['application/pdf', 'text/csv', 'text/plain', 'image/png', 'image/jpeg'], true)) throw new RuntimeException('Use PDF, CSV, TXT, PNG, or JPG.');
-			$key = getenv('GEMINI_API_KEY');
-			if (!$key) throw new RuntimeException('GEMINI_API_KEY is not configured on the server.');
 			$prompt = 'Extract every timetable row. Return JSON only as {"rows":[{"program_code":"","course_code":"","course_name":"","year_level":1,"semester":1,"day_of_week":"Monday","start_time":"08:00","end_time":"09:00","room_name":"","type":"Class"}]}. Decode values like 4,2 as year 4 semester 2. Apply merged time headers to following rows. Use Not assigned for unknown values. Do not explain.';
-			$parts = [['text' => $prompt]];
-			if ($mime === 'application/pdf' || str_starts_with($mime, 'image/')) $parts[] = ['inlineData' => ['mimeType' => $mime, 'data' => base64_encode(file_get_contents($file['tmp_name']))]];
-			else $parts[] = ['text' => file_get_contents($file['tmp_name'])];
-			$payload = json_encode(['contents' => [['parts' => $parts]], 'generationConfig' => ['temperature' => 0, 'maxOutputTokens' => 16384, 'responseMimeType' => 'application/json']]);
-			$ch = curl_init('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=' . rawurlencode($key));
-			curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => $payload, CURLOPT_HTTPHEADER => ['Content-Type: application/json'], CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 120]);
-			$response = curl_exec($ch); $error = curl_error($ch); $status = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
-			if ($response === false || $error) throw new RuntimeException($error ?: 'Gemini request failed.');
-			if ($status < 200 || $status >= 300) throw new RuntimeException('Gemini request failed: ' . (json_decode($response, true)['error']['message'] ?? 'unknown error'));
+
+			if ($mime === 'application/pdf') {
+				$text = pdfToText($file['tmp_name']);
+				if ($text === '') throw new RuntimeException('Could not extract text from this PDF (it may be a scanned image). Install poppler\'s pdftotext, or export/upload the timetable as PNG/JPG instead.');
+				$content = [['type' => 'text', 'text' => $prompt . "\n\nDocument content:\n" . $text]];
+			} elseif (str_starts_with($mime, 'image/')) {
+				$content = [
+					['type' => 'text', 'text' => $prompt],
+					['type' => 'image_url', 'image_url' => ['url' => 'data:' . $mime . ';base64,' . base64_encode(file_get_contents($file['tmp_name']))]],
+				];
+			} else {
+				$content = [['type' => 'text', 'text' => $prompt . "\n\nDocument content:\n" . file_get_contents($file['tmp_name'])]];
+			}
+
+			$aiText = callAI($content);
 			$preview = [];
-			foreach (importRows(geminiText($response)) as $row) {
+			foreach (importRows($aiText) as $row) {
 				$preview[] = [
 					'program_code' => trim((string) valueOf($row, ['program_code', 'programme_code', 'program'], 'Not assigned')),
 					'course_code' => trim((string) valueOf($row, ['course_code', 'subject_code', 'course'], 'Not assigned')),
@@ -88,12 +137,12 @@ try {
 			$pdo->beginTransaction();
 			foreach ($preview as $row) {
 				$find = $pdo->prepare('SELECT id FROM programmes WHERE program_code = :code LIMIT 1'); $find->execute([':code' => $row['program_code']]); $program = $find->fetch();
-				if (!$program) { $add = $pdo->prepare('INSERT INTO programmes (program_code, program_name, level) VALUES (:code, :name, :level)'); $add->execute([':code' => $row['program_code'], ':name' => $row['program_code'], ':level' => $row['year_level']]); $programId = $pdo->lastInsertId(); } else $programId = $program['id'];
+				if (!$program) { $add = $pdo->prepare('INSERT INTO programmes (program_code, program_name, level) VALUES (:code, :name, :level) RETURNING id'); $add->execute([':code' => $row['program_code'], ':name' => $row['program_code'], ':level' => $row['year_level']]); $programId = $add->fetchColumn(); } else $programId = $program['id'];
 				$find = $pdo->prepare('SELECT id FROM courses WHERE course_code = :code LIMIT 1'); $find->execute([':code' => $row['course_code']]); $course = $find->fetch();
-				if (!$course) { $add = $pdo->prepare('INSERT INTO courses (course_code, course_name) VALUES (:code, :name)'); $add->execute([':code' => $row['course_code'], ':name' => $row['course_name']]); $courseId = $pdo->lastInsertId(); } else $courseId = $course['id'];
+				if (!$course) { $add = $pdo->prepare('INSERT INTO courses (course_code, course_name) VALUES (:code, :name) RETURNING id'); $add->execute([':code' => $row['course_code'], ':name' => $row['course_name']]); $courseId = $add->fetchColumn(); } else $courseId = $course['id'];
 				$find = $pdo->prepare('SELECT id FROM rooms WHERE room_name = :name LIMIT 1'); $find->execute([':name' => $row['room_name']]); $room = $find->fetch();
-				if (!$room) { $add = $pdo->prepare('INSERT INTO rooms (room_name, capacity) VALUES (:name, 50)'); $add->execute([':name' => $row['room_name']]); $roomId = $pdo->lastInsertId(); } else $roomId = $room['id'];
-				$map = $pdo->prepare('INSERT IGNORE INTO course_program (course_id, program_id, year_level, semester) VALUES (:course, :program, :year, :semester)'); $map->execute([':course' => $courseId, ':program' => $programId, ':year' => $row['year_level'], ':semester' => $row['semester']]);
+				if (!$room) { $add = $pdo->prepare('INSERT INTO rooms (room_name, capacity) VALUES (:name, 50) RETURNING id'); $add->execute([':name' => $row['room_name']]); $roomId = $add->fetchColumn(); } else $roomId = $room['id'];
+				$map = $pdo->prepare('INSERT INTO course_program (course_id, program_id, year_level, semester) VALUES (:course, :program, :year, :semester) ON CONFLICT DO NOTHING'); $map->execute([':course' => $courseId, ':program' => $programId, ':year' => $row['year_level'], ':semester' => $row['semester']]);
 				$add = $pdo->prepare('INSERT INTO schedules (program_id, course_id, room_id, type, day_of_week, start_time, end_time, year_level, semester) VALUES (:program, :course, :room, :type, :day, :start, :end, :year, :semester)'); $add->execute([':program' => $programId, ':course' => $courseId, ':room' => $roomId, ':type' => $row['type'], ':day' => $row['day_of_week'], ':start' => $row['start_time'], ':end' => $row['end_time'], ':year' => $row['year_level'], ':semester' => $row['semester']]);
 			}
 			$pdo->commit(); unset($_SESSION['ai_import_preview']); $preview = []; $message = 'Timetable imported successfully.'; $messageType = 'success';
@@ -107,4 +156,5 @@ try {
 <main class="dashboard-container"><header class="welcome-banner"><div><span class="eyebrow">Administrator workspace</span><h1>AI timetable import</h1><p>Upload, review, and confirm a timetable document.</p></div></header>
 <?php if ($message): ?><div class="alert-box <?php echo htmlspecialchars($messageType); ?>"><?php echo htmlspecialchars($message); ?></div><?php endif; ?>
 <section class="dash-card"><h3>Analyse document</h3><form method="POST" enctype="multipart/form-data"><input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>"><input type="file" name="timetable_document" accept=".pdf,.csv,.txt,.png,.jpg,.jpeg" required><button class="btn-submit" name="analyse_document">Analyse timetable</button></form></section>
+<section class="dash-card"><h3>CSV template</h3><p>Download a CSV template for bulk timetable updates.</p><a class="filter-export" href="data:text/csv;charset=utf-8,Program%20Code,Course%20Code,Course%20Name,Year%20Level,Semester,Day,Start%20Time,End%20Time,Room%20Name,Type%0AABC,CS101,Programming%20Fundamentals,1,1,Monday,08:00,09:00,LT1,Class" download="timetable_template.csv">Download template</a></section>
 <?php if ($preview): ?><section class="dash-card"><h3>Import preview</h3><div style="overflow-x:auto"><table class="schedule-table"><thead><tr><th>Programme</th><th>Course</th><th>Year</th><th>Semester</th><th>Day</th><th>Time</th><th>Room</th></tr></thead><tbody><?php foreach ($preview as $row): ?><tr><td><?php echo htmlspecialchars($row['program_code']); ?></td><td><?php echo htmlspecialchars($row['course_code'] . ' - ' . $row['course_name']); ?></td><td><?php echo $row['year_level']; ?></td><td><?php echo $row['semester']; ?></td><td><?php echo htmlspecialchars($row['day_of_week']); ?></td><td><?php echo htmlspecialchars($row['start_time'] . ' - ' . $row['end_time']); ?></td><td><?php echo htmlspecialchars($row['room_name']); ?></td></tr><?php endforeach; ?></tbody></table></div><form method="POST"><input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>"><button class="btn-submit" name="confirm_import">Confirm import</button><button class="filter-reset" name="clear_preview">Clear</button></form></section><?php endif; ?></main></body></html>

@@ -39,6 +39,9 @@ try {
 
     // Handle Schedule Slot Creation (Admins and Lecturers)
     if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['add_schedule']) && in_array($role, ['Administrator', 'Lecturer'])) {
+        if (!hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'] ?? '')) {
+            throw new RuntimeException('Your session has expired. Refresh and try again.');
+        }
         $course_id = intval($_POST['course_id'] ?? 0);
         $room_name_input = trim($_POST['room_name'] ?? '');
         $day = trim($_POST['day'] ?? '');
@@ -52,6 +55,7 @@ try {
             $message = "Start time must be strictly earlier than end time.";
             $statusClass = "error";
         } else {
+            $pdo->beginTransaction();
             // Find or Create Room
             $roomStmt = $pdo->prepare("SELECT id FROM rooms WHERE room_name = :room_name");
             $roomStmt->execute([':room_name' => $room_name_input]);
@@ -61,9 +65,9 @@ try {
                 $room_id = $existingRoom['id'];
             } else {
                 // Dynamically insert new room if it doesn't exist yet
-                $createRoomStmt = $pdo->prepare("INSERT INTO rooms (room_name, capacity) VALUES (:room_name, 50)");
+                $createRoomStmt = $pdo->prepare("INSERT INTO rooms (room_name, capacity) VALUES (:room_name, 50) RETURNING id");
                 $createRoomStmt->execute([':room_name' => $room_name_input]);
-                $room_id = $pdo->lastInsertId();
+                $room_id = $createRoomStmt->fetchColumn();
             }
 
             // Conflict Detection 1: Room Double-booking Check
@@ -82,6 +86,7 @@ try {
             if ($roomConflictStmt->fetch()) {
                 $message = "Conflict Detected! Room '" . htmlspecialchars($room_name_input) . "' is already booked during this time slot.";
                 $statusClass = "error";
+                $pdo->rollBack();
             } else {
                 // Conflict Detection 2: Lecturer Double-booking Check
                 $lecturerConflictStmt = $pdo->prepare("
@@ -101,21 +106,60 @@ try {
                 if ($lecturerConflictStmt->fetch()) {
                     $message = "Conflict Detected! The assigned lecturer has another class scheduled during this time slot.";
                     $statusClass = "error";
+                    $pdo->rollBack();
                 } else {
-                    // No conflicts — Insert Schedule Entry
-                    $insertStmt = $pdo->prepare("
-                        INSERT INTO schedules (course_id, room_id, day_of_week, start_time, end_time) 
-                        VALUES (:course_id, :room_id, :day, :start_time, :end_time)
-                    ");
-                    $insertStmt->execute([
-                        ':course_id' => $course_id,
-                        ':room_id' => $room_id,
-                        ':day' => $day,
-                        ':start_time' => $start_time,
-                        ':end_time' => $end_time
-                    ]);
-                    $message = "Schedule entry added successfully for room '" . htmlspecialchars($room_name_input) . "'!";
-                    $statusClass = "success";
+                    // Publish one schedule row for every programme assigned to this course.
+                    $mappingStmt = $pdo->prepare('SELECT program_id, year_level, semester FROM course_program WHERE course_id = :course_id');
+                    $mappingStmt->execute([':course_id' => $course_id]);
+                    $mappings = $mappingStmt->fetchAll();
+
+                    if (empty($mappings)) {
+                        $message = "Assign this course to at least one programme before creating a timetable slot.";
+                        $statusClass = "error";
+                        $pdo->rollBack();
+                    } else {
+                        $cohortConflictStmt = $pdo->prepare('SELECT id FROM schedules WHERE program_id = :program_id AND year_level = :year_level AND semester = :semester AND day_of_week = :day AND start_time < :end_time AND end_time > :start_time LIMIT 1');
+                        $cohortConflict = false;
+                        foreach ($mappings as $mapping) {
+                            $cohortConflictStmt->execute([
+                                ':program_id' => (int) $mapping['program_id'],
+                                ':year_level' => (int) $mapping['year_level'],
+                                ':semester' => (int) $mapping['semester'],
+                                ':day' => $day,
+                                ':start_time' => $start_time,
+                                ':end_time' => $end_time
+                            ]);
+                            if ($cohortConflictStmt->fetch()) {
+                                $cohortConflict = true;
+                                break;
+                            }
+                        }
+                        if ($cohortConflict) {
+                            $message = 'Conflict detected: this programme, year, and semester already has a schedule during that time.';
+                            $statusClass = 'error';
+                            $pdo->rollBack();
+                        } else {
+                        $insertStmt = $pdo->prepare("
+                            INSERT INTO schedules (program_id, course_id, room_id, day_of_week, start_time, end_time, year_level, semester)
+                            VALUES (:program_id, :course_id, :room_id, :day, :start_time, :end_time, :year_level, :semester)
+                        ");
+                        foreach ($mappings as $mapping) {
+                            $insertStmt->execute([
+                                ':program_id' => (int) $mapping['program_id'],
+                                ':course_id' => $course_id,
+                                ':room_id' => $room_id,
+                                ':day' => $day,
+                                ':start_time' => $start_time,
+                                ':end_time' => $end_time,
+                                ':year_level' => (int) $mapping['year_level'],
+                                ':semester' => (int) $mapping['semester']
+                            ]);
+                        }
+                        $message = "Schedule entry added for " . count($mappings) . " assigned programme(s) in room '" . htmlspecialchars($room_name_input) . "'.";
+                        $statusClass = "success";
+                        $pdo->commit();
+                        }
+                    }
                 }
             }
         }
@@ -192,6 +236,7 @@ $daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday
             <div class="dash-card" style="margin-bottom: 2rem;">
                 <h3>Allocate Time Slot</h3>
                 <form action="timetable.php" method="POST" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; align-items: end;">
+                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
                     <div class="form-group" style="margin: 0;">
                         <label for="course_id">Course</label>
                         <select id="course_id" name="course_id" required>
@@ -239,9 +284,20 @@ $daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday
             <?php if (empty($schedules)): ?>
                 <p style="color: #64748b; margin-top: 1rem;">No time slots scheduled yet.</p>
             <?php else: ?>
-                <div class="timetable-filters"><input type="search" id="scheduleSearch" placeholder="Search course, room, or lecturer"><select id="dayFilter"><option value="">All days</option><?php foreach ($daysOfWeek as $d): ?><option value="<?php echo htmlspecialchars($d); ?>"><?php echo htmlspecialchars($d); ?></option><?php endforeach; ?></select><button type="button" id="exportSchedule" class="filter-export">Export CSV</button></div>
+                <div class="timetable-filters">
+                    <input type="search" id="scheduleSearch" placeholder="Search course, room, or lecturer">
+                    <select id="dayFilter">
+                        <option value="">All days</option>
+                        <?php foreach ($daysOfWeek as $d): ?>
+                            <option value="<?php echo htmlspecialchars($d); ?>"><?php echo htmlspecialchars($d); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <button type="button" id="exportScheduleCsv" class="filter-export">Export CSV</button>
+                    <button type="button" id="exportScheduleXls" class="filter-export">Export Excel</button>
+                    <button type="button" id="exportSchedulePdf" class="filter-export">Export PDF</button>
+                </div>
                 <div style="overflow-x: auto; margin-top: 1rem;">
-                    <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem;">
+                    <table id="timetableTable" style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem;">
                         <thead>
                             <tr style="background-color: #f1f5f9; border-bottom: 2px solid #cbd5e1;">
                                 <th style="padding: 0.75rem;">Day</th>
@@ -281,10 +337,56 @@ $daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday
     </main>
 
     <script>
-        const search = document.getElementById('scheduleSearch'), day = document.getElementById('dayFilter'), rows = Array.from(document.querySelectorAll('.schedule-row')), count = document.getElementById('scheduleResultCount');
-        function filterRows() { const q = (search?.value || '').toLowerCase(); const d = day?.value || ''; let visible = 0; rows.forEach(row => { const show = (!q || row.dataset.search.includes(q)) && (!d || row.dataset.day === d); row.hidden = !show; if (show) visible++; }); if (count) count.textContent = visible + (visible === 1 ? ' slot' : ' slots'); }
-        search?.addEventListener('input', filterRows); day?.addEventListener('change', filterRows);
-        document.getElementById('exportSchedule')?.addEventListener('click', () => { const csv = [['Day','Time','Course Code','Course Title','Room','Lecturer'], ...rows.filter(row => !row.hidden).map(row => Array.from(row.cells).slice(0,6).map(cell => '"' + cell.textContent.trim().replace(/"/g, '""') + '"'))].map(row => row.join(',')).join('\n'); const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'})); link.download = 'timetable.csv'; link.click(); });
+        const search = document.getElementById('scheduleSearch');
+        const day = document.getElementById('dayFilter');
+        const rows = Array.from(document.querySelectorAll('.schedule-row'));
+        const count = document.getElementById('scheduleResultCount');
+
+        function filterRows() {
+            const q = (search?.value || '').toLowerCase();
+            const d = day?.value || '';
+            let visible = 0;
+            rows.forEach(row => {
+                const show = (!q || row.dataset.search.includes(q)) && (!d || row.dataset.day === d);
+                row.hidden = !show;
+                if (show) visible++;
+            });
+            if (count) count.textContent = visible + (visible === 1 ? ' slot' : ' slots');
+        }
+
+        search?.addEventListener('input', filterRows);
+        day?.addEventListener('change', filterRows);
+
+        function exportTableFile(filename, mimeType, content) {
+            const blob = new Blob([content], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+        }
+
+        function exportVisibleRowsAsCsv() {
+            const visibleRows = rows.filter(row => !row.hidden);
+            const rowsCsv = [['Day','Time','Course Code','Course Title','Room','Lecturer'], ...visibleRows.map(row => Array.from(row.cells).slice(0, 6).map(cell => '"' + cell.textContent.trim().replace(/"/g, '""') + '"'))];
+            exportTableFile('timetable.csv', 'text/csv;charset=utf-8', rowsCsv.map(r => r.join(',')).join('\n'));
+        }
+
+        function exportVisibleRowsAsXls() {
+            const visibleRows = rows.filter(row => !row.hidden);
+            const html = ['<html><head><meta charset="utf-8"></head><body><table border="1"><tr><th>Day</th><th>Time</th><th>Course Code</th><th>Course Title</th><th>Room</th><th>Lecturer</th></tr>']
+                .concat(visibleRows.map(row => '<tr>' + Array.from(row.cells).slice(0, 6).map(cell => '<td>' + cell.textContent.trim() + '</td>').join('') + '</tr>'))
+                .concat(['</table></body></html>'])
+                .join('');
+            exportTableFile('timetable.xls', 'application/vnd.ms-excel;charset=utf-8', html);
+        }
+
+        document.getElementById('exportScheduleCsv')?.addEventListener('click', exportVisibleRowsAsCsv);
+        document.getElementById('exportScheduleXls')?.addEventListener('click', exportVisibleRowsAsXls);
+        document.getElementById('exportSchedulePdf')?.addEventListener('click', () => window.print());
     </script>
 
 </body>

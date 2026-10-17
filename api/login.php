@@ -25,4 +25,4 @@ if ($user && password_verify($data['password'], $user['password'])) {
     ]);
 } else {
     echo json_encode(['status' => 'error', 'message' => 'Invalid username or password']);
-}gn
+}

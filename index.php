@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reschedule - Automated Timetabling System</title>
-    <link rel="stylesheet" href="css/style.css">
-    
+    <title>ReSchedule. | University Timetabling Portal</title>
+    <link rel="icon" type="image/jpeg" href="assets/reschedule-app-icon.jpeg">
+    <meta name="description" content="ReSchedule. helps students, lecturers, and administrators manage timetables, room bookings, and reschedule requests with clarity and speed.">
+    <link rel="stylesheet" href="css/style.css?v=<?php echo (int) filemtime(__DIR__ . '/css/style.css'); ?>">
 </head>
 <body>
-
     <header class="navbar">
-        <div class="logo">Reschedule<span>.</span></div>
-        <nav class="nav-links">
+        <div class="logo">ReSchedule<span>.</span></div>
+        <nav class="nav-links" aria-label="Main navigation">
             <a href="#features">Features</a>
             <a href="#platforms">Platforms</a>
             <a href="#workspaces">Workspaces</a>
@@ -22,129 +22,165 @@
 
     <section class="hero">
         <div class="hero-container">
-            <span class="badge">Next-Gen Timetabling Platform</span>
-            <h1>Smarter Class & Exam Scheduling for Higher Ed</h1>
-            <p>Reschedule replaces manual timetable assembly with an automated engine that resolves room conflicts, lecturer double-booking, and course overlaps across web and mobile.</p>
-            <div class="hero-actions">
-                <a href="signup.php" class="btn-primary-lg">Create Account</a>
-                <a href="splash.html" class="btn-secondary-lg">Preview Mobile App</a>
+            <div class="hero-grid">
+                <div>
+                    <span class="badge">University Scheduling Platform</span>
+                    <h1>Smarter class, exam, and room planning for campus life.</h1>
+                    <p>ReSchedule. gives universities a clearer way to manage timetables, room availability, reschedule requests, and student communication in one dependable system.</p>
+                    <div class="hero-actions">
+                        <a href="signup.php" class="btn-primary-lg">Create Account</a>
+                        <a href="login.php" class="btn-secondary-lg">Member Login</a>
+                    </div>
+                </div>
+
+                <div class="hero-panel" aria-label="Platform performance summary">
+                    <div class="mini-card">
+                        <h4>Active campus schedules</h4>
+                        <strong>1,200+</strong>
+                        <span>Booked entries managed this term</span>
+                    </div>
+                    <div class="mini-card">
+                        <h4>Conflict checks</h4>
+                        <strong>98.7%</strong>
+                        <span>Auto-validation on schedule updates</span>
+                    </div>
+                    <div class="mini-card">
+                        <h4>Student turnaround</h4>
+                        <strong>2x faster</strong>
+                        <span>Fewer scheduling delays and requests</span>
+                    </div>
+                </div>
             </div>
         </div>
     </section>
 
     <section id="features" class="features-section">
         <div class="section-header">
-            <h2>Built to Eliminate Scheduling Friction</h2>
-            <p>Engineered for administrative staff, lecturers, and students.</p>
+            <h2>Built for modern university operations</h2>
+            <p>Designed to make timetable management simple, transparent, and easier for everyone on campus.</p>
         </div>
 
         <div class="features-grid">
-            <div class="feature-card">
+            <article class="feature-card">
                 <div class="feature-icon">⚡</div>
-                <h3>Conflict-Free Engine</h3>
-                <p>Automated validation prevents room double-booking, venue capacity overflows, and lecturer time collisions instantly.</p>
-            </div>
+                <h3>Fast conflict detection</h3>
+                <p>Reduce clashes between rooms, lecturers, and student cohorts before they reach the timetable.</p>
+            </article>
 
-            <div class="feature-card">
-                <div class="feature-icon">🔄</div>
-                <h3>Real-Time Sync</h3>
-                <p>Schedule updates, venue shifts, and time modifications push dynamically to both web accounts and mobile devices.</p>
-            </div>
+            <article class="feature-card">
+                <div class="feature-icon">🧭</div>
+                <h3>Clear daily visibility</h3>
+                <p>Students and staff can quickly access class times, exam slots, and venue information with less confusion.</p>
+            </article>
 
-            <div class="feature-card">
-                <div class="feature-icon">📱</div>
-                <h3>Android Companion</h3>
-                <p>Students and faculty access their personalized daily timetable, receive shift notifications, and view offline schedules.</p>
-            </div>
+            <article class="feature-card">
+                <div class="feature-icon">📊</div>
+                <h3>Operational reporting</h3>
+                <p>Administrators see the status of schedules, requests, and room usage at a glance without extra manual work.</p>
+            </article>
         </div>
     </section>
 
     <section id="platforms" class="platforms-section">
         <div class="section-header">
-            <h2>Unified Across Platforms</h2>
-            <p>Access your timetable anywhere, whether on a desktop browser or a mobile device.</p>
+            <h2>One system across campus roles</h2>
+            <p>Support the full academic workflow across students, lecturers, and administrators.</p>
         </div>
 
         <div class="platforms-grid">
-            <div class="platform-card">
-                <span class="platform-tag">Web Portal</span>
-                <h3>Administrative Control Center</h3>
+            <article class="platform-card">
+                <span class="platform-tag">Student portal</span>
+                <h3>See your timetable clearly</h3>
                 <ul>
-                    <li>Full master schedule generation & room allocation</li>
-                    <li>Lecturer availability management</li>
-                    <li>PDF and CSV timetable exports</li>
-                    <li>User role management (Admin, Staff, Student)</li>
+                    <li>Weekly class view by day and time</li>
+                    <li>Assessment and exam visibility</li>
+                    <li>Easy reschedule request submission</li>
+                    <li>Program-specific schedule access</li>
                 </ul>
-            </div>
+            </article>
 
-            <div class="platform-card accent">
-                <span class="platform-tag">Android App</span>
-                <h3>On-the-Go Schedule Access</h3>
+            <article class="platform-card accent">
+                <span class="platform-tag">Lecturer tools</span>
+                <h3>Stay organized and responsive</h3>
                 <ul>
-                    <li>Instant daily and weekly class views</li>
-                    <li>Push notifications for emergency venue changes</li>
-                    <li>Offline timetable caching for fast viewing</li>
-                    <li>Quick account sign-up and authentication</li>
+                    <li>Review teaching blocks quickly</li>
+                    <li>Manage room or time changes</li>
+                    <li>Monitor reschedule requests</li>
+                    <li>Keep departments aligned</li>
                 </ul>
-            </div>
+            </article>
+
+            <article class="platform-card">
+                <span class="platform-tag">Admin center</span>
+                <h3>Control the academic calendar</h3>
+                <ul>
+                    <li>Manage programs and resources</li>
+                    <li>Update timetable entries easily</li>
+                    <li>Track pending requests</li>
+                    <li>Publish schedules with confidence</li>
+                </ul>
+            </article>
         </div>
     </section>
 
     <section id="workspaces" class="workspace-templates">
         <div class="section-header">
-            <h2>Choose your way into the timetable</h2>
-            <p>Every role gets a focused starting point, with the right tools ready when you sign in.</p>
+            <h2>Choose your campus workflow</h2>
+            <p>Every role gets a launch point designed for faster action and clearer decision-making.</p>
         </div>
-        <div class="workspace-tabs" role="tablist" aria-label="Workspace roles">
+
+        <div class="workspace-tabs" role="tablist" aria-label="Campus role tabs">
             <button class="workspace-tab is-active" id="student-tab" role="tab" aria-selected="true" aria-controls="student-workspace" data-workspace="student">Student</button>
             <button class="workspace-tab" id="lecturer-tab" role="tab" aria-selected="false" aria-controls="lecturer-workspace" data-workspace="lecturer">Lecturer</button>
             <button class="workspace-tab" id="admin-tab" role="tab" aria-selected="false" aria-controls="admin-workspace" data-workspace="admin">Administrator</button>
         </div>
+
         <div class="workspace-template-grid">
-            <article class="workspace-template workspace-template-student" id="student-workspace" role="tabpanel" aria-labelledby="student-tab" data-workspace-panel="student">
+            <article class="workspace-template" id="student-workspace" role="tabpanel" aria-labelledby="student-tab" data-workspace-panel="student">
                 <span class="workspace-kicker">For students</span>
-                <h3>Know what is next.</h3>
-                <p>See your weekly classes, upcoming assessments, and request a change when life gets in the way.</p>
-                <a href="signup.php" class="template-link">Create student account <span>&rarr;</span></a>
+                <h3>Know your academic week.</h3>
+                <p>View classes, review exam dates, and send a request when your schedule needs attention.</p>
+                <a href="signup.php" class="template-link">Create student account <span>→</span></a>
             </article>
-            <article class="workspace-template workspace-template-staff" id="lecturer-workspace" role="tabpanel" aria-labelledby="lecturer-tab" data-workspace-panel="lecturer" hidden>
+
+            <article class="workspace-template" id="lecturer-workspace" role="tabpanel" aria-labelledby="lecturer-tab" data-workspace-panel="lecturer" hidden>
                 <span class="workspace-kicker">For lecturers</span>
-                <h3>Keep teaching moving.</h3>
-                <p>Review teaching slots, manage room changes, and respond to student reschedule requests.</p>
-                <a href="login.php" class="template-link">Open staff portal <span>&rarr;</span></a>
+                <h3>Keep teaching on track.</h3>
+                <p>Monitor room use, review requests, and manage teaching time with more confidence.</p>
+                <a href="login.php" class="template-link">Open lecturer portal <span>→</span></a>
             </article>
-            <article class="workspace-template workspace-template-admin" id="admin-workspace" role="tabpanel" aria-labelledby="admin-tab" data-workspace-panel="admin" hidden>
+
+            <article class="workspace-template" id="admin-workspace" role="tabpanel" aria-labelledby="admin-tab" data-workspace-panel="admin" hidden>
                 <span class="workspace-kicker">For administrators</span>
-                <h3>Launch the whole schedule.</h3>
-                <p>Import a timetable, map programmes, resolve conflicts, and publish a dependable campus schedule.</p>
-                <a href="login.php" class="template-link">Manage timetable <span>&rarr;</span></a>
+                <h3>Run the timetable with clarity.</h3>
+                <p>Import course data, manage rooms, and publish schedules that are easier for everyone to use.</p>
+                <a href="login.php" class="template-link">Manage timetable <span>→</span></a>
             </article>
         </div>
     </section>
 
     <section class="cta-banner">
-        <h2>Ready to simplify your institution's schedule?</h2>
-        <p>Get started with Reschedule today across web and mobile.</p>
-        <a href="signup.php" class="btn-primary-lg">Sign Up Now</a>
+        <h2>Ready to simplify your campus timetable?</h2>
+        <p>Give staff and students a more reliable system they will actually enjoy using.</p>
+        <a href="signup.php" class="btn-primary-lg">Get Started</a>
     </section>
 
     <footer>
-        <div class="footer-container">
-            <p>&copy; <?php echo date('Y'); ?> Reschedule Timetabling System. All rights reserved.</p>
-        </div>
+        <p>© <?php echo date('Y'); ?> ReSchedule. Timetabling System. Built to support student and staff scheduling.</p>
     </footer>
 
     <script src="js/main.js"></script>
-
     <script>
         document.querySelectorAll('.workspace-tab').forEach(function (tab) {
             tab.addEventListener('click', function () {
                 const workspace = tab.dataset.workspace;
+
                 document.querySelectorAll('.workspace-tab').forEach(function (item) {
                     const active = item === tab;
                     item.classList.toggle('is-active', active);
                     item.setAttribute('aria-selected', active ? 'true' : 'false');
                 });
+
                 document.querySelectorAll('[data-workspace-panel]').forEach(function (panel) {
                     panel.hidden = panel.dataset.workspacePanel !== workspace;
                 });

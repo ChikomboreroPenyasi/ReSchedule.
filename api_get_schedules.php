@@ -14,10 +14,11 @@ try {
             FROM schedules s
             LEFT JOIN courses c ON s.course_id = c.id
             LEFT JOIN rooms r ON s.room_id = r.id
-            WHERE s.program_id = :program_id
+                 WHERE (s.program_id = :program_id
+                     OR EXISTS (SELECT 1 FROM course_program cp WHERE cp.course_id = s.course_id AND cp.program_id = :mapped_program_id AND cp.year_level = s.year_level AND cp.semester = s.semester))
             ORDER BY s.type DESC, s.date ASC, s.day_of_week ASC, s.start_time ASC
         ");
-        $stmt->execute([':program_id' => $program_id]);
+        $stmt->execute([':program_id' => $program_id, ':mapped_program_id' => $program_id]);
     } else {
         $stmt = $pdo->query("
             SELECT s.id, s.type, s.day_of_week, s.date, s.start_time, s.end_time, 

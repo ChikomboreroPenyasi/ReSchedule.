@@ -22,6 +22,8 @@ $programme_name = 'your programme';
 $enrolled_year = 1;
 $enrolled_semester = 1;
 $today_classes = 0;
+$next_class = null;
+$next_assessment = null;
 $message = '';
 $message_type = 'danger';
 
@@ -31,29 +33,45 @@ if (empty($_SESSION['csrf_token'])) {
 
 // Handle Student Reschedule Request Submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'submit_reschedule') {
+    if (!hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'] ?? '')) {
+        $message = 'Your session has expired. Refresh and try again.';
+        $message_type = 'danger';
+    } else {
     $schedule_id    = intval($_POST['schedule_id'] ?? 0);
     $reason         = trim($_POST['reason'] ?? '');
     $preferred_time = trim($_POST['preferred_time'] ?? '');
 
     if ($schedule_id > 0 && !empty($reason)) {
         try {
-            $stmt_req = $pdo->prepare("
-                INSERT INTO reschedule_requests (student_id, schedule_id, reason, preferred_time, status)
-                VALUES (:student_id, :schedule_id, :reason, :preferred_time, 'Pending')
-            ");
-            $stmt_req->execute([
-                ':student_id'    => $user_id,
-                ':schedule_id'   => $schedule_id,
-                ':reason'        => $reason,
-                ':preferred_time'=> $preferred_time
+            $existingReq = $pdo->prepare("SELECT id FROM reschedule_requests WHERE student_id = :student_id AND schedule_id = :schedule_id AND status = 'Pending' LIMIT 1");
+            $existingReq->execute([
+                ':student_id' => $user_id,
+                ':schedule_id' => $schedule_id,
             ]);
-            $message = "Your reschedule request has been submitted successfully!";
-            $message_type = "success";
+
+            if ($existingReq->fetch()) {
+                $message = "You already have a pending reschedule request for this schedule.";
+                $message_type = "warning";
+            } else {
+                $stmt_req = $pdo->prepare("
+                    INSERT INTO reschedule_requests (student_id, schedule_id, reason, preferred_time, status)
+                    VALUES (:student_id, :schedule_id, :reason, :preferred_time, 'Pending')
+                ");
+                $stmt_req->execute([
+                    ':student_id'    => $user_id,
+                    ':schedule_id'   => $schedule_id,
+                    ':reason'        => $reason,
+                    ':preferred_time'=> $preferred_time
+                ]);
+                $message = "Your reschedule request has been submitted successfully!";
+                $message_type = "success";
+            }
         } catch (PDOException $e) {
             $message = "Database Error: " . $e->getMessage();
         }
     } else {
         $message = "Please provide a valid schedule and reason.";
+    }
     }
 }
 
@@ -74,10 +92,12 @@ try {
             FROM schedules s
             LEFT JOIN courses c ON s.course_id = c.id
             LEFT JOIN rooms r ON s.room_id = r.id
-            WHERE s.type IN ('CA', 'Exam') AND s.program_id = :program_id AND s.year_level = :year_level AND s.semester = :semester
+                        WHERE s.type IN ('CA', 'Exam')
+                            AND ((s.program_id = :program_id AND s.year_level = :year_level AND s.semester = :semester)
+                                     OR EXISTS (SELECT 1 FROM course_program cp WHERE cp.course_id = s.course_id AND cp.program_id = :mapped_program_id AND cp.year_level = :mapped_year_level AND cp.semester = :mapped_semester))
             ORDER BY s.date ASC, s.start_time ASC
         ");
-        $stmt_ca->execute([':program_id' => $program_id, ':year_level' => $enrolled_year, ':semester' => $enrolled_semester]);
+        $stmt_ca->execute([':program_id' => $program_id, ':year_level' => $enrolled_year, ':semester' => $enrolled_semester, ':mapped_program_id' => $program_id, ':mapped_year_level' => $enrolled_year, ':mapped_semester' => $enrolled_semester]);
     } else {
         $stmt_ca = $pdo->query("
             SELECT s.*, COALESCE(c.course_code, s.course_code) AS course_code, 
@@ -99,13 +119,15 @@ try {
             FROM schedules s
             LEFT JOIN courses c ON s.course_id = c.id
             LEFT JOIN rooms r ON s.room_id = r.id
-            WHERE s.type = 'Class' AND s.program_id = :program_id AND s.year_level = :year_level AND s.semester = :semester
+                        WHERE s.type = 'Class'
+                            AND ((s.program_id = :program_id AND s.year_level = :year_level AND s.semester = :semester)
+                                     OR EXISTS (SELECT 1 FROM course_program cp WHERE cp.course_id = s.course_id AND cp.program_id = :mapped_program_id AND cp.year_level = :mapped_year_level AND cp.semester = :mapped_semester))
             ORDER BY CASE s.day_of_week
                 WHEN 'Monday' THEN 1 WHEN 'Tuesday' THEN 2 WHEN 'Wednesday' THEN 3
                 WHEN 'Thursday' THEN 4 WHEN 'Friday' THEN 5 WHEN 'Saturday' THEN 6 ELSE 7 END,
                 s.start_time ASC
         ");
-        $stmt_class->execute([':program_id' => $program_id, ':year_level' => $enrolled_year, ':semester' => $enrolled_semester]);
+        $stmt_class->execute([':program_id' => $program_id, ':year_level' => $enrolled_year, ':semester' => $enrolled_semester, ':mapped_program_id' => $program_id, ':mapped_year_level' => $enrolled_year, ':mapped_semester' => $enrolled_semester]);
     } else {
         $stmt_class = $pdo->query("
             SELECT s.*, COALESCE(c.course_code, s.course_code) AS course_code, 
@@ -121,6 +143,27 @@ try {
         ");
     }
     $class_schedules = $stmt_class->fetchAll();
+
+    $currentTimestamp = time();
+    foreach ($class_schedules as $classSchedule) {
+        $isToday = ($classSchedule['day_of_week'] ?? '') === date('l');
+        $classTimestamp = strtotime(($isToday ? date('Y-m-d') : '1970-01-01') . ' ' . ($classSchedule['start_time'] ?? '00:00:00'));
+        if ($isToday && $classTimestamp >= $currentTimestamp) {
+            $next_class = $classSchedule;
+            break;
+        }
+    }
+    if (!$next_class && !empty($class_schedules)) {
+        $next_class = $class_schedules[0];
+    }
+
+    foreach ($ca_schedules as $assessment) {
+        $assessmentDate = $assessment['date'] ?? null;
+        if (!$assessmentDate || $assessmentDate >= date('Y-m-d')) {
+            $next_assessment = $assessment;
+            break;
+        }
+    }
 
     // 3. Fetch Student's Reschedule Request History
     if ($role === 'Student') {
@@ -143,6 +186,110 @@ try {
     }
     $today_classes = count(array_filter($class_schedules, fn ($schedule) => ($schedule['day_of_week'] ?? '') === date('l')));
 
+    $notifications = [];
+    if ($role === 'Student') {
+        if ($next_class) {
+            $notifications[] = [
+                'type' => 'info',
+                'text' => 'Next class: ' . htmlspecialchars($next_class['course_code'] ?? 'Course') . ' on ' . htmlspecialchars($next_class['day_of_week'] ?? 'Today') . ' at ' . htmlspecialchars($next_class['start_time'] ?? ''),
+            ];
+        }
+        if ($next_assessment) {
+            $notifications[] = [
+                'type' => 'warning',
+                'text' => 'Assessment reminder: ' . htmlspecialchars($next_assessment['course_code'] ?? 'Assessment') . ' on ' . htmlspecialchars($next_assessment['date'] ?? '') . ' at ' . htmlspecialchars($next_assessment['start_time'] ?? ''),
+            ];
+        }
+        if ($today_classes > 0) {
+            $notifications[] = [
+                'type' => 'info',
+                'text' => 'You have ' . $today_classes . ' class' . ($today_classes === 1 ? '' : 'es') . ' today.',
+            ];
+        }
+        if (count($my_requests) > 0) {
+            $notifications[] = [
+                'type' => 'warning',
+                'text' => 'You have ' . count($my_requests) . ' reschedule request' . (count($my_requests) === 1 ? '' : 's') . ' in progress.',
+            ];
+        } else {
+            $notifications[] = [
+                'type' => 'success',
+                'text' => 'No active reschedule requests. You are up to date.',
+            ];
+        }
+    } else {
+        if ($pending_requests > 0) {
+            $notifications[] = [
+                'type' => 'warning',
+                'text' => $pending_requests . ' pending reschedule request' . ($pending_requests === 1 ? '' : 's') . ' need review.',
+            ];
+        } else {
+            $notifications[] = [
+                'type' => 'success',
+                'text' => 'No pending reschedule requests. Everything is clear.',
+            ];
+        }
+        if ($next_assessment) {
+            $notifications[] = [
+                'type' => 'info',
+                'text' => 'Upcoming assessment: ' . htmlspecialchars($next_assessment['course_code'] ?? 'Assessment') . ' on ' . htmlspecialchars($next_assessment['date'] ?? ''),
+            ];
+        }
+    }
+
+    $calendarMonth = (int) date('n');
+    $calendarYear = (int) date('Y');
+    $calendarStart = new DateTimeImmutable(sprintf('%04d-%02d-01', $calendarYear, $calendarMonth));
+    $calendarDaysInMonth = (int) $calendarStart->format('t');
+    $calendarEventsByDate = [];
+
+    foreach ($class_schedules as $schedule) {
+        if (empty($schedule['day_of_week'])) {
+            continue;
+        }
+        $dayName = $schedule['day_of_week'];
+        $dayNumber = 1;
+        while ($dayNumber <= $calendarDaysInMonth) {
+            $date = new DateTimeImmutable(sprintf('%04d-%02d-%02d', $calendarYear, $calendarMonth, $dayNumber));
+            if ($date->format('l') === $dayName) {
+                $dateKey = $date->format('Y-m-d');
+                $calendarEventsByDate[$dateKey][] = [
+                    'type' => 'Class',
+                    'label' => trim((string) ($schedule['course_code'] ?? 'Class')),
+                    'time' => trim((string) ($schedule['start_time'] ?? '')) . ' - ' . trim((string) ($schedule['end_time'] ?? ''))
+                ];
+            }
+            $dayNumber++;
+        }
+    }
+
+    foreach ($ca_schedules as $assessment) {
+        $assessmentDate = trim((string) ($assessment['date'] ?? ''));
+        if ($assessmentDate === '') {
+            continue;
+        }
+        $eventDate = new DateTimeImmutable($assessmentDate);
+        if ($eventDate->format('n') === $calendarMonth && $eventDate->format('Y') === (string) $calendarYear) {
+            $dateKey = $eventDate->format('Y-m-d');
+            $calendarEventsByDate[$dateKey][] = [
+                'type' => strtoupper((string) ($assessment['type'] ?? 'Assessment')),
+                'label' => trim((string) ($assessment['course_code'] ?? 'Assessment')),
+                'time' => trim((string) ($assessment['start_time'] ?? '')) . ' - ' . trim((string) ($assessment['end_time'] ?? ''))
+            ];
+        }
+    }
+
+    $calendarDays = [];
+    for ($day = 1; $day <= $calendarDaysInMonth; $day++) {
+        $date = new DateTimeImmutable(sprintf('%04d-%02d-%02d', $calendarYear, $calendarMonth, $day));
+        $dateKey = $date->format('Y-m-d');
+        $calendarDays[] = [
+            'day' => $day,
+            'date' => $dateKey,
+            'events' => $calendarEventsByDate[$dateKey] ?? []
+        ];
+    }
+
 } catch (PDOException $e) {
     $message = "Database Error: " . $e->getMessage();
 }
@@ -153,47 +300,83 @@ try {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Reschedule - Dashboard</title>
-    <link rel="stylesheet" href="css/style.css">
-    <style>
-        .action-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
-        .action-card { background: #ffffff; padding: 1.25rem; border-radius: 8px; border: 1px solid #cbd5e1; text-align: center; text-decoration: none; color: #1e293b; transition: all 0.2s ease; cursor: pointer; }
-        .action-card:hover { border-color: #2563eb; transform: translateY(-2px); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
-        .action-card h4 { margin: 0 0 0.5rem 0; color: #2563eb; }
-        .action-card p { margin: 0; font-size: 0.85rem; color: #64748b; }
-        .schedule-table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 0.9rem; }
-        .schedule-table th, .schedule-table td { padding: 0.75rem; border-bottom: 1px solid #e2e8f0; text-align: left; }
-        .schedule-table th { background: #f8fafc; font-weight: 600; color: #475569; }
-        .badge { padding: 0.25rem 0.6rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; display: inline-block; }
-        .badge-ca { background: #fef3c7; color: #92400e; }
-        .badge-exam { background: #fee2e2; color: #991b1b; }
-        .badge-pending { background: #fef3c7; color: #b45309; }
-        .badge-approved { background: #dcfce7; color: #15803d; }
-        .badge-rejected { background: #fee2e2; color: #b91c1c; }
-        .btn-req { background: #2563eb; color: #ffffff; border: none; padding: 0.4rem 0.8rem; border-radius: 4px; font-weight: 600; cursor: pointer; font-size: 0.8rem; }
-        .btn-req:hover { background: #1d4ed8; }
-        
-        /* Modal Styles */
-        .modal-overlay { display: none; position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; }
-        .modal-content { background: #ffffff; padding: 1.5rem; border-radius: 8px; width: 100%; max-width: 450px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
-        .modal-content h3 { margin-top: 0; color: #1e293b; }
-        .form-group { margin-bottom: 1rem; }
-        .form-group label { display: block; margin-bottom: 0.3rem; font-weight: 600; color: #475569; font-size: 0.85rem; }
-        .form-group input, .form-group textarea, .form-group select { width: 100%; padding: 0.5rem; border: 1px solid #cbd5e1; border-radius: 4px; box-sizing: border-box; }
-        .modal-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
-        .btn-cancel { background: #94a3b8; color: white; border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; }
-    </style>
+    <link rel="stylesheet" href="css/style.css?v=<?php echo (int) filemtime(__DIR__ . '/css/style.css'); ?>">
 </head>
 <body class="dashboard-body">
 
     <nav class="navbar">
         <div class="logo">Reschedule<span>.</span></div>
         <div class="user-profile">
+            <button type="button" class="sidebar-toggle" id="sidebarToggle" aria-controls="dashboardSidebar" aria-expanded="false">☰ Menu</button>
             <span><strong><?php echo htmlspecialchars($fullname); ?></strong> (<?php echo htmlspecialchars($role); ?>)</span>
             <a href="logout.php" class="btn-logout">Log Out</a>
         </div>
     </nav>
 
-    <main class="dashboard-container">
+    <div class="dashboard-shell">
+        <aside class="dashboard-sidebar" id="dashboardSidebar">
+            <div class="sidebar-heading">
+                <strong><?php echo htmlspecialchars($fullname); ?></strong>
+                <span><?php echo htmlspecialchars($role); ?> workspace</span>
+            </div>
+            <span class="sidebar-label">Workspace</span>
+            <nav class="sidebar-nav" aria-label="Dashboard navigation">
+                <a href="dashboard.php" class="is-active"><span class="sidebar-icon">⌂</span>Overview</a>
+                <a href="timetable.php"><span class="sidebar-icon">▦</span>Master timetable</a>
+                <a href="#notifications"><span class="sidebar-icon">◎</span>Notifications <span class="sidebar-badge"><?php echo count($notifications); ?></span></a>
+                <?php if ($role === 'Student'): ?>
+                    <a href="#request-history"><span class="sidebar-icon">↗</span>My requests</a>
+                <?php endif; ?>
+            </nav>
+
+            <?php if ($role === 'Student'): ?>
+                <div class="sidebar-request-panel" id="request-history">
+                    <div class="sidebar-request-header">
+                        <strong>My Reschedule Requests</strong>
+                        <span class="sidebar-request-count"><?php echo count($my_requests); ?></span>
+                    </div>
+
+                    <?php if (empty($my_requests)): ?>
+                        <p class="sidebar-request-empty">You have not submitted any reschedule requests yet.</p>
+                    <?php else: ?>
+                        <ul class="sidebar-request-list">
+                            <?php foreach (array_slice($my_requests, 0, 3) as $req): ?>
+                                <li>
+                                    <span class="request-status <?php echo strtolower($req['status']); ?>"><?php echo htmlspecialchars($req['status']); ?></span>
+                                    <strong><?php echo htmlspecialchars($req['course_code'] ?? 'Course'); ?></strong>
+                                    <small><?php echo htmlspecialchars($req['day_of_week'] ?? $req['date']); ?> · <?php echo htmlspecialchars($req['start_time']); ?></small>
+                                </li>
+                            <?php endforeach; ?>
+                        </ul>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
+
+            <?php if (in_array($role, ['Administrator', 'Lecturer'], true)): ?>
+                <span class="sidebar-label">Management</span>
+                <nav class="sidebar-nav" aria-label="Management navigation">
+                    <a href="add_schedule.php"><span class="sidebar-icon">＋</span>Add schedule</a>
+                    <a href="manage_courses.php"><span class="sidebar-icon">◇</span>Courses</a>
+                    <a href="manage_resources.php"><span class="sidebar-icon">▣</span>Resources</a>
+                    <a href="manage_events.php"><span class="sidebar-icon">◷</span>Events</a>
+                    <a href="manage_reschedules.php"><span class="sidebar-icon">↻</span>Requests</a>
+                    <a href="manage_substitutions.php"><span class="sidebar-icon">⇄</span>Substitute coverage</a>
+                    <?php if ($role === 'Administrator'): ?>
+                        <a href="generate_timetable.php"><span class="sidebar-icon">✧</span>Generate timetable</a>
+                        <a href="manage_users.php"><span class="sidebar-icon">◎</span>Users</a>
+                        <a href="ai_import.php"><span class="sidebar-icon">✦</span>AI import</a>
+                    <?php endif; ?>
+                </nav>
+            <?php endif; ?>
+
+            <div class="sidebar-note">
+                <strong><?php echo htmlspecialchars(date('l, j F')); ?></strong>
+                <p>Keep schedules current and check requests before the next academic session.</p>
+            </div>
+        </aside>
+
+        <main class="dashboard-main">
+        <div class="dashboard-container">
         
         <header class="welcome-banner">
             <div>
@@ -210,6 +393,70 @@ try {
             </div>
         <?php endif; ?>
 
+        <section id="notifications" class="notification-panel" aria-label="Notifications">
+            <div class="card-heading-row">
+                <h3>Notifications</h3>
+                <span class="section-hint"><?php echo count($notifications); ?> item<?php echo count($notifications) === 1 ? '' : 's'; ?></span>
+            </div>
+            <ul class="notification-list">
+                <?php foreach ($notifications as $notification): ?>
+                    <li class="notification-item notification-<?php echo htmlspecialchars($notification['type']); ?>">
+                        <span class="notification-dot"></span>
+                        <span><?php echo $notification['text']; ?></span>
+                    </li>
+                <?php endforeach; ?>
+            </ul>
+        </section>
+
+        <?php if ($role === 'Student'): ?>
+        <section class="student-overview-grid" aria-label="Student overview">
+            <article class="profile-summary-card">
+                <div class="card-heading-row">
+                    <h3>Student profile</h3>
+                    <span class="section-hint">Academic summary</span>
+                </div>
+                <div class="profile-summary-top">
+                    <div class="profile-avatar"><?php echo htmlspecialchars(strtoupper(substr($fullname, 0, 1))); ?></div>
+                    <div>
+                        <h4><?php echo htmlspecialchars($fullname); ?></h4>
+                        <p><?php echo htmlspecialchars($programme_name); ?></p>
+                    </div>
+                </div>
+                <div class="profile-meta-grid">
+                    <div><span>Year</span><strong>Year <?php echo $enrolled_year; ?></strong></div>
+                    <div><span>Semester</span><strong>Semester <?php echo $enrolled_semester; ?></strong></div>
+                    <div><span>Classes</span><strong><?php echo count($class_schedules); ?></strong></div>
+                    <div><span>Requests</span><strong><?php echo count($my_requests); ?></strong></div>
+                </div>
+            </article>
+
+            <article class="calendar-card">
+                <div class="card-heading-row">
+                    <h3>Academic calendar</h3>
+                    <span class="section-hint"><?php echo htmlspecialchars(date('F Y')); ?></span>
+                </div>
+                <div class="calendar-weekdays">
+                    <?php foreach (['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as $abbr): ?>
+                        <span><?php echo $abbr; ?></span>
+                    <?php endforeach; ?>
+                </div>
+                <div class="calendar-grid">
+                    <?php foreach ($calendarDays as $dayInfo): ?>
+                        <div class="calendar-day <?php echo !empty($dayInfo['events']) ? 'has-events' : ''; ?>">
+                            <span class="calendar-day-number"><?php echo $dayInfo['day']; ?></span>
+                            <?php foreach (array_slice($dayInfo['events'], 0, 2) as $event): ?>
+                                <span class="calendar-chip <?php echo strtolower($event['type']) === 'exam' ? 'chip-exam' : 'chip-class'; ?>"><?php echo htmlspecialchars($event['label']); ?></span>
+                            <?php endforeach; ?>
+                            <?php if (count($dayInfo['events']) > 2): ?>
+                                <span class="calendar-more">+<?php echo count($dayInfo['events']) - 2; ?></span>
+                            <?php endif; ?>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            </article>
+        </section>
+        <?php endif; ?>
+
         <section class="summary-grid" aria-label="Dashboard summary">
             <div class="summary-card summary-card-primary"><span class="summary-label">My classes</span><strong><?php echo count($class_schedules); ?></strong><small>Weekly schedule</small></div>
             <div class="summary-card"><span class="summary-label">Today</span><strong><?php echo $today_classes; ?></strong><small><?php echo htmlspecialchars(date('l')); ?> classes</small></div>
@@ -217,19 +464,67 @@ try {
             <div class="summary-card <?php echo $pending_requests > 0 ? 'summary-card-attention' : ''; ?>"><span class="summary-label"><?php echo $role === 'Student' ? 'My requests' : 'Pending requests'; ?></span><strong><?php echo $role === 'Student' ? count($my_requests) : $pending_requests; ?></strong><small><?php echo $role === 'Student' ? 'Reschedule history' : 'Needs review'; ?></small></div>
         </section>
 
+        <?php if ($role !== 'Administrator'): ?>
+        <section class="dashboard-updates" aria-label="Dashboard updates">
+            <div class="update-panel">
+                <h3>What’s happening</h3>
+                <div class="update-list">
+                    <div class="update-item"><span class="update-dot"></span><div><strong><?php echo count($class_schedules); ?> class slots available</strong><span>Your current timetable is ready to review.</span></div></div>
+                    <div class="update-item"><span class="update-dot"></span><div><strong><?php echo count($ca_schedules); ?> assessment slots published</strong><span>Check dates, times, and venues before attending.</span></div></div>
+                    <div class="update-item"><span class="update-dot"></span><div><strong><?php echo $role === 'Student' ? count($my_requests) : $pending_requests; ?> request<?php echo (($role === 'Student' ? count($my_requests) : $pending_requests) === 1) ? '' : 's'; ?> in your view</strong><span><?php echo $role === 'Student' ? 'Track your submitted reschedule requests.' : 'Review outstanding student requests.'; ?></span></div></div>
+                </div>
+            </div>
+            <div class="next-step-panel">
+                <h3>Next best action</h3>
+                <p><?php if ($role === 'Student'): ?>Review your timetable and submit a request if a slot needs attention.<?php elseif ($pending_requests > 0): ?>There are requests waiting for an academic decision.<?php else: ?>Keep your timetable and academic resources up to date.<?php endif; ?></p>
+                <a href="<?php echo ($role === 'Student') ? '#request-history' : (($pending_requests > 0) ? 'manage_reschedules.php' : 'timetable.php'); ?>"><?php echo ($role === 'Student') ? 'View my requests' : (($pending_requests > 0) ? 'Review requests' : 'Open timetable'); ?> &rarr;</a>
+            </div>
+        </section>
+        <?php endif; ?>
+
+        <?php if ($role === 'Student'): ?>
+        <section class="student-focus-grid" aria-label="Student academic focus">
+            <article class="student-focus-card student-focus-primary">
+                <span class="focus-kicker">Next class</span>
+                <?php if ($next_class): ?>
+                    <strong><?php echo htmlspecialchars($next_class['course_code']); ?></strong>
+                    <h3><?php echo htmlspecialchars($next_class['course_name']); ?></h3>
+                    <p><?php echo htmlspecialchars($next_class['day_of_week']); ?> - <?php echo htmlspecialchars($next_class['start_time']); ?> to <?php echo htmlspecialchars($next_class['end_time']); ?></p>
+                    <span class="focus-location"><?php echo htmlspecialchars($next_class['room_name'] ?? 'Venue to be confirmed'); ?></span>
+                <?php else: ?>
+                    <h3>No class scheduled</h3>
+                    <p>Your current timetable does not have an upcoming class slot.</p>
+                <?php endif; ?>
+            </article>
+            <article class="student-focus-card">
+                <span class="focus-kicker">Next assessment</span>
+                <?php if ($next_assessment): ?>
+                    <span class="badge <?php echo ($next_assessment['type'] === 'Exam') ? 'badge-exam' : 'badge-ca'; ?>"><?php echo htmlspecialchars($next_assessment['type']); ?></span>
+                    <h3><?php echo htmlspecialchars($next_assessment['course_code']); ?> - <?php echo htmlspecialchars($next_assessment['course_name']); ?></h3>
+                    <p><?php echo htmlspecialchars($next_assessment['date']); ?> - <?php echo htmlspecialchars($next_assessment['start_time']); ?> to <?php echo htmlspecialchars($next_assessment['end_time']); ?></p>
+                    <span class="focus-location"><?php echo htmlspecialchars($next_assessment['room_name'] ?? 'Venue to be confirmed'); ?></span>
+                <?php else: ?>
+                    <h3>No upcoming assessment</h3>
+                    <p>New assessment dates will appear here when published.</p>
+                <?php endif; ?>
+            </article>
+        </section>
+        <?php endif; ?>
+
         <!-- Quick Actions Grid -->
-        <h3 style="margin-bottom: 1rem; color: #334155;">Management & Quick Actions</h3>
-        <div class="action-grid">
+        <h3 class="dashboard-section-title"><?php echo $role === 'Student' ? 'Student actions' : 'Management & Quick Actions'; ?></h3>
+        <div class="action-grid<?php echo $role === 'Administrator' ? ' action-grid-compact' : ''; ?>">
             <a href="timetable.php" class="action-card">
-                <h4>Master Timetable</h4>
-                <p>View full weekly grid & room allocations</p>
+                <?php if ($role === 'Administrator'): ?><span class="action-card-icon" aria-hidden="true">▦</span><?php endif; ?>
+                <div class="action-card-content"><h4>Master Timetable</h4>
+                <p>View full weekly grid & room allocations</p></div>
             </a>
 
             <?php if ($role === 'Student'): ?>
-                <div onclick="openModal()" class="action-card">
+                <button type="button" onclick="openModal()" class="action-card action-card-button">
                     <h4>Request Reschedule</h4>
                     <p>Submit a request to change a class or exam slot</p>
-                </div>
+                </button>
                 <a href="#request-history" class="action-card">
                     <h4>Request History</h4>
                     <p>Track status of your submitted requests</p>
@@ -238,86 +533,59 @@ try {
 
             <?php if (in_array($role, ['Administrator', 'Lecturer'])): ?>
                 <a href="manage_courses.php" class="action-card">
-                    <h4>Manage Courses</h4>
-                    <p>Assign courses to academic programmes</p>
+                    <span class="action-card-icon" aria-hidden="true">◇</span>
+                    <div class="action-card-content"><h4>Manage Courses</h4>
+                    <p>Assign courses to academic programmes</p></div>
                 </a>
                 <a href="manage_resources.php" class="action-card">
-                    <h4>Manage Resources</h4>
-                    <p>Configure halls, labs, and capacities</p>
+                    <span class="action-card-icon" aria-hidden="true">▣</span>
+                    <div class="action-card-content"><h4>Manage Resources</h4>
+                    <p>Configure halls, labs, and capacities</p></div>
                 </a>
                 <a href="add_schedule.php" class="action-card">
-                    <h4>Add Schedule Slot</h4>
-                    <p>Create new class, CA, or Exam entry</p>
+                    <span class="action-card-icon" aria-hidden="true">＋</span>
+                    <div class="action-card-content"><h4>Add Schedule Slot</h4>
+                    <p>Create new class, CA, or Exam entry</p></div>
                 </a>
                 <a href="manage_reschedules.php" class="action-card">
-                    <h4>Reschedule Requests</h4>
-                    <p>Review and approve/reject student requests</p>
+                    <span class="action-card-icon" aria-hidden="true">↻</span>
+                    <div class="action-card-content"><h4>Reschedule Requests</h4>
+                    <p>Review and approve/reject student requests</p></div>
                 </a>
             <?php endif; ?>
 
             <?php if ($role === 'Administrator'): ?>
+                <a href="generate_timetable.php" class="action-card">
+                    <span class="action-card-icon" aria-hidden="true">✧</span>
+                    <div class="action-card-content"><h4>Generate Timetable</h4>
+                    <p>Build and review a conflict-checked weekly draft</p></div>
+                </a>
                 <a href="ai_import.php" class="action-card">
-                    <h4>AI Timetable Import</h4>
-                    <p>Upload and review a timetable document</p>
+                    <span class="action-card-icon" aria-hidden="true">✦</span>
+                    <div class="action-card-content"><h4>AI Timetable Import</h4>
+                    <p>Upload and review a timetable document</p></div>
                 </a>
                 <a href="manage_users.php" class="action-card">
-                    <h4>Manage Users</h4>
-                    <p>Register & update student/lecturer accounts</p>
+                    <span class="action-card-icon" aria-hidden="true">◎</span>
+                    <div class="action-card-content"><h4>Manage Users</h4>
+                    <p>Register & update student/lecturer accounts</p></div>
+                </a>
+            <?php endif; ?>
+            <?php if (in_array($role, ['Administrator', 'Lecturer'], true)): ?>
+                <a href="manage_substitutions.php" class="action-card">
+                    <span class="action-card-icon" aria-hidden="true">⇄</span>
+                    <div class="action-card-content"><h4>Substitute Coverage</h4>
+                    <p>Report lecturer absences and arrange class cover</p></div>
                 </a>
             <?php endif; ?>
         </div>
 
-        <?php if ($role === 'Student'): ?>
-        <!-- Student Request History Table -->
-        <div id="request-history" class="dash-card" style="margin-bottom: 2rem;">
-            <h3>My Reschedule Requests</h3>
-            <?php if (empty($my_requests)): ?>
-                <p style="color: #64748b; margin-top: 1rem;">You have not submitted any reschedule requests yet.</p>
-            <?php else: ?>
-                <div style="overflow-x: auto;">
-                    <table class="schedule-table">
-                        <thead>
-                            <tr>
-                                <th>Course</th>
-                                <th>Type</th>
-                                <th>Slot Details</th>
-                                <th>Reason</th>
-                                <th>Preferred Time</th>
-                                <th>Submitted Date</th>
-                                <th>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($my_requests as $req): ?>
-                                <tr>
-                                    <td><strong><?php echo htmlspecialchars($req['course_code']); ?></strong> - <?php echo htmlspecialchars($req['course_name']); ?></td>
-                                    <td><?php echo htmlspecialchars($req['type']); ?></td>
-                                    <td><?php echo htmlspecialchars($req['day_of_week'] ?? $req['date']); ?> (<?php echo htmlspecialchars($req['start_time']); ?>)</td>
-                                    <td><?php echo htmlspecialchars($req['reason']); ?></td>
-                                    <td><?php echo htmlspecialchars(!empty($req['preferred_time']) ? $req['preferred_time'] : 'None'); ?></td>
-                                    <td><?php echo htmlspecialchars(date('Y-m-d H:i', strtotime($req['created_at']))); ?></td>
-                                    <td>
-                                        <?php 
-                                            $statusClass = 'badge-pending';
-                                            if ($req['status'] === 'Approved') $statusClass = 'badge-approved';
-                                            if ($req['status'] === 'Rejected') $statusClass = 'badge-rejected';
-                                        ?>
-                                        <span class="badge <?php echo $statusClass; ?>">
-                                            <?php echo htmlspecialchars($req['status']); ?>
-                                        </span>
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
-            <?php endif; ?>
-        </div>
-        <?php endif; ?>
-
         <!-- CA & Exam Schedule Table -->
-        <div class="dash-card" style="margin-bottom: 2rem;">
-            <h3>CA & Exam Schedule</h3>
+        <details class="dash-card schedule-disclosure">
+            <summary>
+                <span class="schedule-summary-title"><h3>CA & Exam Schedule</h3><span class="section-hint"><?php echo count($ca_schedules); ?> published</span></span>
+                <span class="schedule-toggle"><span class="when-closed">Show schedule</span><span class="when-open">Hide schedule</span></span>
+            </summary>
             <?php if (empty($ca_schedules)): ?>
                 <p style="color: #64748b; margin-top: 1rem;">No scheduled CAs or Exams found.</p>
             <?php else: ?>
@@ -360,11 +628,14 @@ try {
                     </table>
                 </div>
             <?php endif; ?>
-        </div>
+        </details>
 
         <!-- Weekly Class Timetable Table -->
-        <div class="dash-card">
-            <h3>Weekly Class Timetable</h3>
+        <details class="dash-card schedule-disclosure">
+            <summary>
+                <span class="schedule-summary-title"><h3>Weekly Class Timetable</h3><span class="section-hint"><?php echo count($class_schedules); ?> class slots</span></span>
+                <span class="schedule-toggle"><span class="when-closed">Show timetable</span><span class="when-open">Hide timetable</span></span>
+            </summary>
             <?php if (empty($class_schedules)): ?>
                 <p style="color: #64748b; margin-top: 1rem;">No active class slots found.</p>
             <?php else: ?>
@@ -401,17 +672,20 @@ try {
                     </table>
                 </div>
             <?php endif; ?>
+        </details>
+
         </div>
+        </main>
+    </div>
 
-    </main>
-
-    <!-- Student Reschedule Modal -->
+    <?php if ($role === 'Student'): ?>
     <div id="rescheduleModal" class="modal-overlay">
         <div class="modal-content">
             <h3>Submit Reschedule Request</h3>
             <form method="POST">
                 <input type="hidden" name="action" value="submit_reschedule">
-                
+                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
+
                 <div class="form-group">
                     <label for="schedule_id">Select Slot</label>
                     <select name="schedule_id" id="schedule_id" required>
@@ -421,3 +695,77 @@ try {
                                 <?php echo htmlspecialchars($sc['course_code'] . ' (' . ($sc['day_of_week'] ?? $sc['date']) . ' ' . $sc['start_time'] . ')'); ?>
                             </option>
                         <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="reason">Reason for request</label>
+                    <textarea name="reason" id="reason" rows="4" placeholder="Tell us why this class or exam needs rescheduling" required></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="preferred_time">Preferred time</label>
+                    <input type="text" name="preferred_time" id="preferred_time" placeholder="e.g. Tuesday 10:00 - 12:00">
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn-cancel" onclick="closeModal()">Cancel</button>
+                    <button type="submit" class="btn-primary">Submit Request</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <script>
+        const sidebar = document.getElementById('dashboardSidebar');
+        const sidebarToggle = document.getElementById('sidebarToggle');
+        sidebarToggle?.addEventListener('click', function () {
+            const open = sidebar.classList.toggle('is-open');
+            sidebarToggle.setAttribute('aria-expanded', String(open));
+        });
+
+        sidebar?.querySelectorAll('a').forEach(function (link) {
+            link.addEventListener('click', function () {
+                sidebar.classList.remove('is-open');
+                sidebarToggle?.setAttribute('aria-expanded', 'false');
+            });
+        });
+
+        const rescheduleModal = document.getElementById('rescheduleModal');
+        const scheduleSelect = document.getElementById('schedule_id');
+
+        function openModal() {
+            if (rescheduleModal) {
+                rescheduleModal.style.display = 'flex';
+            }
+        }
+
+        function openModalFor(scheduleId) {
+            if (!rescheduleModal || !scheduleSelect) return;
+            if (scheduleId) {
+                scheduleSelect.value = String(scheduleId);
+            }
+            rescheduleModal.style.display = 'flex';
+        }
+
+        function closeModal() {
+            if (!rescheduleModal || !scheduleSelect) return;
+            rescheduleModal.style.display = 'none';
+            scheduleSelect.value = '';
+        }
+
+        if (rescheduleModal) {
+            rescheduleModal.addEventListener('click', function (event) {
+                if (event.target === rescheduleModal) {
+                    closeModal();
+                }
+            });
+
+            document.addEventListener('keydown', function (event) {
+                if (event.key === 'Escape' && rescheduleModal.style.display === 'flex') {
+                    closeModal();
+                }
+            });
+        }
+    </script>

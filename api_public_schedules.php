@@ -15,22 +15,45 @@ try {
             }
         }
 
+        $courseStmt = $pdo->prepare('SELECT id FROM courses WHERE course_code = :course_code LIMIT 1');
+        $courseStmt->execute([':course_code' => trim($input['course_code'])]);
+        $course = $courseStmt->fetch();
+        if (!$course) {
+            http_response_code(422);
+            echo json_encode(['status' => 'error', 'message' => 'Course is not registered.']);
+            exit();
+        }
+
+        $mappingStmt = $pdo->prepare('SELECT program_id, year_level, semester FROM course_program WHERE course_id = :course_id');
+        $mappingStmt->execute([':course_id' => $course['id']]);
+        $mappings = $mappingStmt->fetchAll();
+        if (!$mappings) {
+            http_response_code(422);
+            echo json_encode(['status' => 'error', 'message' => 'Course has no programme assignments.']);
+            exit();
+        }
+
         $stmt = $pdo->prepare("
             INSERT INTO schedules
-                (course_id, room_id, course_code, course_name, day_of_week, start_time, end_time, type)
+                (program_id, course_id, room_id, course_code, course_name, day_of_week, start_time, end_time, type, year_level, semester)
             VALUES
-                (:course_id, :room_id, :course_code, :course_name, :day_of_week, :start_time, :end_time, :type)
+                (:program_id, :course_id, :room_id, :course_code, :course_name, :day_of_week, :start_time, :end_time, :type, :year_level, :semester)
         ");
-        $stmt->execute([
-            ':course_id' => 1,
-            ':room_id' => 1,
-            ':course_code' => trim($input['course_code']),
-            ':course_name' => trim($input['course_name']),
-            ':day_of_week' => trim($input['day_of_week']),
-            ':start_time' => trim($input['start_time']),
-            ':end_time' => trim($input['end_time']),
-            ':type' => trim($input['type'])
-        ]);
+        foreach ($mappings as $mapping) {
+            $stmt->execute([
+                ':program_id' => (int) $mapping['program_id'],
+                ':course_id' => (int) $course['id'],
+                ':room_id' => 1,
+                ':course_code' => trim($input['course_code']),
+                ':course_name' => trim($input['course_name']),
+                ':day_of_week' => trim($input['day_of_week']),
+                ':start_time' => trim($input['start_time']),
+                ':end_time' => trim($input['end_time']),
+                ':type' => trim($input['type']),
+                ':year_level' => (int) $mapping['year_level'],
+                ':semester' => (int) $mapping['semester']
+            ]);
+        }
 
         echo json_encode(['status' => 'success', 'message' => 'Schedule published successfully.']);
         exit();

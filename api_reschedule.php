@@ -29,6 +29,14 @@ try {
             exit();
         }
 
+        $existingStmt = $pdo->prepare("SELECT id FROM reschedule_requests WHERE student_id = :student_id AND schedule_id = :schedule_id AND status = 'Pending' LIMIT 1");
+        $existingStmt->execute([':student_id' => $student_id, ':schedule_id' => $schedule_id]);
+        if ($existingStmt->fetch()) {
+            ob_clean();
+            echo json_encode(['status' => 'error', 'message' => 'You already have a pending request for this schedule.']);
+            exit();
+        }
+
         // Insert request into database
         $stmt = $pdo->prepare("
             INSERT INTO reschedule_requests (student_id, schedule_id, reason, preferred_time, status, created_at)
@@ -70,6 +78,7 @@ try {
                 r.reason,
                 r.preferred_time,
                 r.status,
+                r.review_note,
                 r.created_at,
                 s.type,
                 s.day_of_week,
