@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once 'db.php';
+require_once 'schedule_exceptions.php';
 
 // Auth Guard: Admin and Lecturer access only
 if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role'] ?? '', ['Administrator', 'Lecturer'])) {
@@ -42,11 +43,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $end_time    = $_POST['end_time'] ?? '';
     $date        = !empty($_POST['date']) ? $_POST['date'] : null;
 
-    if (empty($selected_programmes) || empty($course_id) || empty($room_id) || empty($start_time) || empty($end_time)) {
+    if (!in_array($type, ['Class', 'CA', 'Exam'], true)) {
+        $error = 'Choose a valid schedule category.';
+    } elseif (in_array($type, ['CA', 'Exam'], true) && !$date) {
+        $error = 'A specific date is required for a CA or exam.';
+    } elseif (empty($selected_programmes) || empty($course_id) || empty($room_id) || empty($start_time) || empty($end_time)) {
         $error = "Please select at least one programme and fill in all required fields.";
     } else {
+        if ($date) {
+            $dateValue = DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+            $dateErrors = DateTimeImmutable::getLastErrors();
+            if (!$dateValue || ($dateErrors !== false && ($dateErrors['warning_count'] > 0 || $dateErrors['error_count'] > 0))) {
+                $error = 'Enter a valid schedule date.';
+            } elseif (in_array($type, ['CA', 'Exam'], true)) {
+                $day_of_week = $dateValue->format('l');
+            }
+        }
         $inserted_count = 0;
-        $has_error = false;
+        $replacedClassOccurrences = 0;
+        $has_error = $error !== '';
 
         $courseProgrammeStmt = $pdo->prepare('SELECT program_id, year_level, semester FROM course_program WHERE course_id = :course_id');
         $courseProgrammeStmt->execute([':course_id' => (int) $course_id]);
@@ -68,19 +83,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if (!$has_error) {
-            $cohortConflictStmt = $pdo->prepare('SELECT id FROM schedules WHERE program_id = :program_id AND year_level = :year_level AND semester = :semester AND day_of_week = :day AND start_time < :end_time AND end_time > :start_time LIMIT 1');
+            $cohortConflictSql = in_array($type, ['CA', 'Exam'], true)
+                ? "SELECT id FROM schedules WHERE program_id = :program_id AND year_level = :year_level AND semester = :semester AND type <> 'Class' AND date = :date AND start_time < :end_time AND end_time > :start_time LIMIT 1"
+                : "SELECT id FROM schedules WHERE program_id = :program_id AND year_level = :year_level AND semester = :semester AND type = 'Class' AND (date IS NULL OR date = :date) AND day_of_week = :day AND start_time < :end_time AND end_time > :start_time LIMIT 1";
+            $cohortConflictStmt = $pdo->prepare($cohortConflictSql);
             foreach ($selected_programmes as $programId) {
-                $assignment = $courseProgrammeLevels[$programId];
-                $cohortConflictStmt->execute([
+                $assignment = $courseProgrammeLevels[$programId] ?? null;
+                if (!$assignment) {
+                    continue;
+                }
+                $params = [
                     ':program_id' => $programId,
                     ':year_level' => $assignment['year_level'],
                     ':semester' => $assignment['semester'],
-                    ':day' => $day_of_week,
+                    ':date' => $date,
                     ':start_time' => $start_time,
                     ':end_time' => $end_time
-                ]);
+                ];
+                if (!in_array($type, ['CA', 'Exam'], true)) {
+                    $params[':day'] = $day_of_week;
+                }
+                $cohortConflictStmt->execute($params);
                 if ($cohortConflictStmt->fetch()) {
-                    $error = 'Conflict detected: this programme, year, and semester already has a schedule during that time.';
+                    $error = in_array($type, ['CA', 'Exam'], true)
+                        ? 'Conflict detected: this programme already has another assessment at that date and time.'
+                        : 'Conflict detected: this programme, year, and semester already has a class during that time.';
                     $has_error = true;
                     break;
                 }
@@ -88,59 +115,103 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if (!$has_error) {
-            $roomConflictStmt = $pdo->prepare('SELECT id FROM schedules WHERE room_id = :room_id AND day_of_week = :day AND start_time < :end_time AND end_time > :start_time LIMIT 1');
-            $roomConflictStmt->execute([':room_id' => (int) $room_id, ':day' => $day_of_week, ':start_time' => $start_time, ':end_time' => $end_time]);
-            if ($roomConflictStmt->fetch()) {
-                $error = 'Conflict detected: the selected room is already booked during that time.';
-                $has_error = true;
+            $roomConflictSql = in_array($type, ['CA', 'Exam'], true)
+                ? 'SELECT id, type, program_id, year_level, semester FROM schedules WHERE room_id = :room_id AND day_of_week = :day AND (date IS NULL OR date = :date) AND start_time < :end_time AND end_time > :start_time'
+                : "SELECT id, type, program_id, year_level, semester FROM schedules WHERE room_id = :room_id AND type = 'Class' AND date IS NULL AND day_of_week = :day AND start_time < :end_time AND end_time > :start_time";
+            $roomConflictStmt = $pdo->prepare($roomConflictSql);
+            $roomConflictParams = [':room_id' => (int) $room_id, ':day' => $day_of_week, ':start_time' => $start_time, ':end_time' => $end_time];
+            if (in_array($type, ['CA', 'Exam'], true)) {
+                $roomConflictParams[':date'] = $date;
+            }
+            $roomConflictStmt->execute($roomConflictParams);
+            foreach ($roomConflictStmt->fetchAll() as $roomConflict) {
+                $willBeReplaced = $type !== 'Class'
+                    && $roomConflict['type'] === 'Class'
+                    && isset($courseProgrammeLevels[(int) $roomConflict['program_id']])
+                    && $courseProgrammeLevels[(int) $roomConflict['program_id']]['year_level'] === (int) $roomConflict['year_level']
+                    && $courseProgrammeLevels[(int) $roomConflict['program_id']]['semester'] === (int) $roomConflict['semester']
+                    && in_array((int) $roomConflict['program_id'], $selected_programmes, true);
+                if (!$willBeReplaced) {
+                    $error = 'Conflict detected: the selected room is already booked during that time.';
+                    $has_error = true;
+                    break;
+                }
             }
         }
 
         if (!$has_error) {
-            $lecturerConflictStmt = $pdo->prepare('SELECT s.id FROM schedules s JOIN courses existing_course ON s.course_id = existing_course.id WHERE existing_course.lecturer_id = (SELECT lecturer_id FROM courses WHERE id = :course_id) AND s.day_of_week = :day AND s.start_time < :end_time AND s.end_time > :start_time LIMIT 1');
-            $lecturerConflictStmt->execute([':course_id' => (int) $course_id, ':day' => $day_of_week, ':start_time' => $start_time, ':end_time' => $end_time]);
-            if ($lecturerConflictStmt->fetch()) {
-                $error = 'Conflict detected: the lecturer already has a schedule during that time.';
-                $has_error = true;
+            $lecturerConflictSql = in_array($type, ['CA', 'Exam'], true)
+                ? "SELECT s.id, s.type, s.program_id, s.year_level, s.semester FROM schedules s JOIN courses existing_course ON s.course_id = existing_course.id WHERE existing_course.lecturer_id = (SELECT lecturer_id FROM courses WHERE id = :course_id) AND s.day_of_week = :day AND (s.date IS NULL OR s.date = :date) AND s.start_time < :end_time AND s.end_time > :start_time"
+                : "SELECT s.id, s.type, s.program_id, s.year_level, s.semester FROM schedules s JOIN courses existing_course ON s.course_id = existing_course.id WHERE existing_course.lecturer_id = (SELECT lecturer_id FROM courses WHERE id = :course_id) AND s.type = 'Class' AND s.date IS NULL AND s.day_of_week = :day AND s.start_time < :end_time AND s.end_time > :start_time";
+            $lecturerConflictStmt = $pdo->prepare($lecturerConflictSql);
+            $lecturerConflictParams = [':course_id' => (int) $course_id, ':day' => $day_of_week, ':start_time' => $start_time, ':end_time' => $end_time];
+            if (in_array($type, ['CA', 'Exam'], true)) {
+                $lecturerConflictParams[':date'] = $date;
+            }
+            $lecturerConflictStmt->execute($lecturerConflictParams);
+            foreach ($lecturerConflictStmt->fetchAll() as $lecturerConflict) {
+                $willBeReplaced = $type !== 'Class'
+                    && $lecturerConflict['type'] === 'Class'
+                    && isset($courseProgrammeLevels[(int) $lecturerConflict['program_id']])
+                    && $courseProgrammeLevels[(int) $lecturerConflict['program_id']]['year_level'] === (int) $lecturerConflict['year_level']
+                    && $courseProgrammeLevels[(int) $lecturerConflict['program_id']]['semester'] === (int) $lecturerConflict['semester']
+                    && in_array((int) $lecturerConflict['program_id'], $selected_programmes, true);
+                if (!$willBeReplaced) {
+                    $error = 'Conflict detected: the lecturer already has a schedule during that time.';
+                    $has_error = true;
+                    break;
+                }
             }
         }
 
-        // Loop through each selected programme and insert a schedule record
-        foreach ($selected_programmes as $program_id) {
-            if ($has_error) {
-                break;
-            }
-            $program_id = (int) $program_id;
-            $assignment = $courseProgrammeLevels[$program_id];
-            $stmt = $pdo->prepare('
-                INSERT INTO schedules
-                    (program_id, course_id, room_id, type, day_of_week, start_time, end_time, year_level, semester, date)
-                VALUES
-                    (:program_id, :course_id, :room_id, :type, :day_of_week, :start_time, :end_time, :year_level, :semester, :date)
-            ');
+        if (!$has_error) {
+            $pdo->beginTransaction();
+            try {
+                $stmt = $pdo->prepare('
+                    INSERT INTO schedules
+                        (program_id, course_id, room_id, type, day_of_week, start_time, end_time, year_level, semester, date)
+                    VALUES
+                        (:program_id, :course_id, :room_id, :type, :day_of_week, :start_time, :end_time, :year_level, :semester, :date)
+                    RETURNING id
+                ');
 
-            if ($stmt->execute([
-                ':program_id' => $program_id,
-                ':course_id' => (int)$course_id,
-                ':room_id' => (int)$room_id,
-                ':type' => $type,
-                ':day_of_week' => $day_of_week,
-                ':start_time' => $start_time,
-                ':end_time' => $end_time,
-                ':year_level' => $assignment['year_level'],
-                ':semester' => $assignment['semester'],
-                ':date' => $date
-            ])) {
-                $inserted_count++;
-            } else {
+                foreach ($selected_programmes as $program_id) {
+                    $program_id = (int) $program_id;
+                    $assignment = $courseProgrammeLevels[$program_id];
+                    $stmt->execute([
+                        ':program_id' => $program_id,
+                        ':course_id' => (int) $course_id,
+                        ':room_id' => (int) $room_id,
+                        ':type' => $type,
+                        ':day_of_week' => $day_of_week,
+                        ':start_time' => $start_time,
+                        ':end_time' => $end_time,
+                        ':year_level' => $assignment['year_level'],
+                        ':semester' => $assignment['semester'],
+                        ':date' => $date
+                    ]);
+                    $scheduleId = (int) $stmt->fetchColumn();
+                    $inserted_count++;
+                    if (in_array($type, ['CA', 'Exam'], true)) {
+                        $replacedClassOccurrences += recordAssessmentClassExceptions($pdo, $scheduleId);
+                    } else {
+                        refreshClassExceptions($pdo, $scheduleId);
+                    }
+                }
+                $pdo->commit();
+            } catch (Throwable $e) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                $error = 'Unable to publish the schedule: ' . $e->getMessage();
                 $has_error = true;
-                $error = "Error inserting schedule for programme ID {$program_id}.";
-                break;
             }
         }
 
         if (!$has_error && $inserted_count > 0) {
-            $message = "Schedule published successfully for {$inserted_count} programme(s), using each course assignment's level and semester.";
+            $message = in_array($type, ['CA', 'Exam'], true)
+                ? "Assessment published for {$inserted_count} programme(s). {$replacedClassOccurrences} regular class occurrence(s) on that date were replaced; future weekly classes remain scheduled."
+                : "Schedule published successfully for {$inserted_count} programme(s), using each course assignment's level and semester.";
         }
     }
     }
@@ -285,7 +356,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <script>
         const courseSelect = document.getElementById('course_id');
+        const scheduleType = document.getElementById('type');
+        const scheduleDate = document.getElementById('date');
+        const scheduleDay = document.getElementById('day_of_week');
         const programmeChoices = Array.from(document.querySelectorAll('.assigned-programme'));
+
+        function updateAssessmentDate() {
+            const requiresDate = ['CA', 'Exam'].includes(scheduleType?.value);
+            scheduleDate.required = requiresDate;
+            if (requiresDate && scheduleDate.value) {
+                const selectedDate = new Date(`${scheduleDate.value}T00:00:00`);
+                scheduleDay.value = selectedDate.toLocaleDateString('en-US', { weekday: 'long' });
+            }
+        }
 
         function updateAssignedProgrammes() {
             const selectedOption = courseSelect?.selectedOptions[0];
@@ -304,7 +387,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         courseSelect?.addEventListener('change', updateAssignedProgrammes);
+        scheduleType?.addEventListener('change', updateAssessmentDate);
+        scheduleDate?.addEventListener('change', updateAssessmentDate);
         updateAssignedProgrammes();
+        updateAssessmentDate();
     </script>
 </body>
 </html>

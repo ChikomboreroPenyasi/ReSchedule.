@@ -46,6 +46,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val masterSchedules: Flow<List<ScheduleEntity>> = repository.getMasterSchedules()
     val requests: Flow<List<RequestEntity>> = repository.getRequests()
     val events: Flow<List<EventEntity>> = repository.getEvents()
+    val classExceptions = repository.classExceptions.asStateFlow()
     
     // Phase 3 Flows
     val assignments: Flow<List<AssignmentEntity>> = repository.getAssignments()
@@ -84,6 +85,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun logout() {
         sessionManager.logout()
+        repository.classExceptions.value = emptyList()
         viewModelScope.launch {
             database.scheduleDao().clearAll()
             database.requestDao().clearAll()

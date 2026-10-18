@@ -48,10 +48,39 @@ try {
         }
     }
 
+    $exceptionsStmt = $pdo->prepare("
+        SELECT exception.schedule_id,
+               TO_CHAR(exception.occurrence_date, 'YYYY-MM-DD') AS occurrence_date,
+               COALESCE(class_course.course_code, class_schedule.course_code, 'Course') AS course_code,
+               TO_CHAR(class_schedule.start_time, 'HH24:MI') AS start_time,
+               TO_CHAR(class_schedule.end_time, 'HH24:MI') AS end_time,
+               exception.source_type,
+               COALESCE(event.title, source_course.course_code, source_schedule.course_code, 'Schedule item') AS replacement
+        FROM schedule_exceptions exception
+        JOIN schedules class_schedule ON class_schedule.id = exception.schedule_id
+        LEFT JOIN courses class_course ON class_course.id = class_schedule.course_id
+        LEFT JOIN events event ON event.id = exception.source_event_id
+        LEFT JOIN schedules source_schedule ON source_schedule.id = exception.source_schedule_id
+        LEFT JOIN courses source_course ON source_course.id = source_schedule.course_id
+        WHERE exception.occurrence_date >= CURRENT_DATE
+          AND (class_schedule.program_id = :program_id
+               OR EXISTS (
+                   SELECT 1 FROM course_program cp
+                   WHERE cp.course_id = class_schedule.course_id
+                     AND cp.program_id = :mapped_program_id
+                     AND cp.year_level = class_schedule.year_level
+                     AND cp.semester = class_schedule.semester
+               ))
+        ORDER BY exception.occurrence_date, class_schedule.start_time
+    ");
+    $exceptionsStmt->execute([':program_id' => $program_id, ':mapped_program_id' => $program_id]);
+    $classExceptions = $exceptionsStmt->fetchAll(PDO::FETCH_ASSOC);
+
     echo json_encode([
         'status' => 'success',
         'timetable' => $timetable,
-        'assessments' => $assessments
+        'assessments' => $assessments,
+        'class_exceptions' => $classExceptions
     ]);
 
 } catch (PDOException $e) {

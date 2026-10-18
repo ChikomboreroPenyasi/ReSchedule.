@@ -5,6 +5,7 @@ import com.reschedule.student.data.local.*
 import com.reschedule.student.data.model.*
 import com.reschedule.student.data.remote.ApiService
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import retrofit2.Response
 
 class StudentRepository(
@@ -12,6 +13,7 @@ class StudentRepository(
     private val db: AppDatabase,
     private val session: SessionManager
 ) {
+    val classExceptions = MutableStateFlow<List<ClassExceptionDto>>(emptyList())
     private val scheduleDao = db.scheduleDao()
     private val requestDao = db.requestDao()
     private val eventDao = db.eventDao()
@@ -45,6 +47,7 @@ class StudentRepository(
             val response = api.getSchedules(session.getProgramId(), session.getAuthToken())
             if (response.isSuccessful) {
                 val body = response.body()
+                classExceptions.value = body?.class_exceptions.orEmpty()
                 val entities = mutableListOf<ScheduleEntity>()
                 body?.timetable?.forEach { dto ->
                     entities.add(dto.toEntity("Class"))
@@ -59,6 +62,7 @@ class StudentRepository(
                 Result.failure(Exception(response.message()))
             }
         } catch (e: Exception) {
+            classExceptions.value = emptyList()
             Result.failure(e)
         }
     }

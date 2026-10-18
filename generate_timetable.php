@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once 'db.php';
+require_once 'schedule_exceptions.php';
 
 // Auth Guard: Administrator only — this can bulk-write the schedules table.
 if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'Administrator') {
@@ -311,6 +312,7 @@ try {
             $insert = $pdo->prepare("
                 INSERT INTO schedules (program_id, course_id, room_id, lecturer_id, type, day_of_week, start_time, end_time, year_level, semester)
                 VALUES (:program_id, :course_id, :room_id, :lecturer_id, 'Class', :day, :start, :end, :year_level, :semester)
+                RETURNING id
             ");
             foreach ($preview['placements'] as $row) {
                 $insert->execute([
@@ -324,6 +326,7 @@ try {
                     ':year_level' => $preview['year_level'],
                     ':semester' => $preview['semester'],
                 ]);
+                refreshClassExceptions($pdo, (int) $insert->fetchColumn());
             }
 
             $log = $pdo->prepare('INSERT INTO generated_timetables (program_id, year_level, semester, generated_by, placed_count, total_count, quality_score) VALUES (:pid, :yl, :sem, :by, :placed, :total, :quality)');

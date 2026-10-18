@@ -3,6 +3,7 @@ session_start();
 
 // Import shared database setup
 require_once 'db.php';
+require_once 'schedule_exceptions.php';
 
 // Auth Guard: Direct unauthenticated users to login page
 if (!isset($_SESSION['user_id'])) {
@@ -144,6 +145,7 @@ try {
                         $insertStmt = $pdo->prepare("
                             INSERT INTO schedules (program_id, course_id, room_id, day_of_week, start_time, end_time, year_level, semester)
                             VALUES (:program_id, :course_id, :room_id, :day, :start_time, :end_time, :year_level, :semester)
+                            RETURNING id
                         ");
                         foreach ($mappings as $mapping) {
                             $insertStmt->execute([
@@ -156,6 +158,7 @@ try {
                                 ':year_level' => (int) $mapping['year_level'],
                                 ':semester' => (int) $mapping['semester']
                             ]);
+                            refreshClassExceptions($pdo, (int) $insertStmt->fetchColumn());
                         }
                         $message = "Schedule entry added for " . count($mappings) . " assigned programme(s) in room '" . htmlspecialchars($room_name_input) . "'.";
                         $statusClass = "success";

@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once 'db.php';
+require_once 'schedule_exceptions.php';
 
 if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role'] ?? '', ['Administrator', 'Lecturer'], true)) {
     header('Location: dashboard.php');
@@ -39,7 +40,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new RuntimeException('The event end must be after its start.');
             }
 
-            $stmt = $pdo->prepare('INSERT INTO events (title, description, event_type, start_datetime, end_datetime, is_all_day, venue, visibility, created_by) VALUES (:title, :description, :event_type, :start_datetime, :end_datetime, :is_all_day, :venue, :visibility, :created_by)');
+            $pdo->beginTransaction();
+            $stmt = $pdo->prepare('INSERT INTO events (title, description, event_type, start_datetime, end_datetime, is_all_day, venue, visibility, created_by) VALUES (:title, :description, :event_type, :start_datetime, :end_datetime, :is_all_day, :venue, :visibility, :created_by) RETURNING id');
             $stmt->execute([
                 ':title' => $title,
                 ':description' => $description ?: null,
@@ -51,17 +53,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':visibility' => $visibility,
                 ':created_by' => (int) $_SESSION['user_id']
             ]);
-            $message = 'Event created successfully.';
+            $eventId = (int) $stmt->fetchColumn();
+            $cancelledClasses = recordEventClassExceptions($pdo, $eventId);
+            $pdo->commit();
+            $message = 'Event created successfully. ' . $cancelledClasses . ' class occurrence(s) replaced for the event date(s).';
         } elseif ($action === 'delete_event') {
             $eventId = (int) ($_POST['event_id'] ?? 0);
             if ($eventId < 1) {
                 throw new RuntimeException('Invalid event selected.');
             }
+            $pdo->beginTransaction();
             $stmt = $pdo->prepare('DELETE FROM events WHERE id = :id');
             $stmt->execute([':id' => $eventId]);
+            $pdo->commit();
             $message = 'Event deleted successfully.';
         }
     } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
         $message = $e->getMessage();
         $messageType = 'error';
     }

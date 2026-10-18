@@ -2,6 +2,7 @@
 session_start();
 set_time_limit(210);
 require_once 'db.php';
+require_once 'schedule_exceptions.php';
 
 if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'Administrator') {
 	header('Location: login.php');
@@ -123,7 +124,7 @@ try {
 			if ($file['size'] > 10 * 1024 * 1024) throw new RuntimeException('The document must be 10 MB or smaller.');
 			$mime = (new finfo(FILEINFO_MIME_TYPE))->file($file['tmp_name']);
 			if (!in_array($mime, ['application/pdf', 'text/csv', 'text/plain', 'image/png', 'image/jpeg'], true)) throw new RuntimeException('Use PDF, CSV, TXT, PNG, or JPG.');
-			$prompt = 'Extract every timetable row. Return JSON only as {"rows":[{"program_code":"","course_code":"","course_name":"","year_level":1,"semester":1,"day_of_week":"Monday","start_time":"08:00","end_time":"09:00","room_name":"","type":"Class"}]}. Decode values like 4,2 as year 4 semester 2. Apply merged time headers to following rows. Use Not assigned for unknown values. Do not explain.';
+			$prompt = 'Extract every timetable row. Return JSON only as {"rows":[{"program_code":"","course_code":"","course_name":"","year_level":1,"semester":1,"day_of_week":"Monday","start_time":"08:00","end_time":"09:00","room_name":"","type":"Class","date":""}]}. Decode values like 4,2 as year 4 semester 2. Apply merged time headers to following rows. Use Not assigned for unknown values. Set date to YYYY-MM-DD only when an explicit date is printed for a one-time class, CA, or exam; otherwise leave it empty. Do not infer dates. Do not explain.';
 
 			if ($mime === 'application/pdf') {
 				$text = pdfToText($file['tmp_name']);
@@ -162,8 +163,9 @@ try {
 								'end_time' => ['type' => 'STRING'],
 								'room_name' => ['type' => 'STRING'],
 								'type' => ['type' => 'STRING'],
+								'date' => ['type' => 'STRING'],
 							],
-							'required' => ['program_code', 'course_code', 'course_name', 'year_level', 'semester', 'day_of_week', 'start_time', 'end_time', 'room_name', 'type'],
+							'required' => ['program_code', 'course_code', 'course_name', 'year_level', 'semester', 'day_of_week', 'start_time', 'end_time', 'room_name', 'type', 'date'],
 						],
 					],
 				],
@@ -171,7 +173,7 @@ try {
 			];
 			$analysisContent = [[
 				'type' => 'text',
-				'text' => 'Identify the weekday from the timetable heading and use it for rows where the day is omitted. Extract all rows that have a start and end time. Each timetable row must have a course name or course code. Apply each printed time to following rows until the next time is shown. Ignore introductory lists that have no time. If year/semester is printed as 4,2, output year_level 4 and semester 2. Use Not assigned for fields absent from the document. Return every scheduled class in the required schema.',
+				'text' => 'Identify the weekday from the timetable heading and use it for rows where the day is omitted. Extract all rows that have a start and end time. Each timetable row must have a course name or course code. Apply each printed time to following rows until the next time is shown. Ignore introductory lists that have no time. If year/semester is printed as 4,2, output year_level 4 and semester 2. Use Not assigned for fields absent from the document. Set date to YYYY-MM-DD only when an explicit date is printed for a one-time class, CA, or exam; otherwise use an empty string. Return every scheduled class in the required schema.',
 			], ...$content];
 			$aiText = callAI($analysisContent, $schema);
 			$preview = [];
@@ -186,7 +188,8 @@ try {
 					'start_time' => (string) valueOf($row, ['start_time', 'start'], '08:00'),
 					'end_time' => (string) valueOf($row, ['end_time', 'end'], '09:00'),
 					'room_name' => trim((string) valueOf($row, ['room_name', 'room', 'venue'], 'Not assigned')),
-					'type' => in_array(valueOf($row, ['type'], 'Class'), ['CA', 'Exam'], true) ? valueOf($row, ['type']) : 'Class'
+					'type' => in_array(valueOf($row, ['type'], 'Class'), ['CA', 'Exam'], true) ? valueOf($row, ['type']) : 'Class',
+					'date' => trim((string) valueOf($row, ['date', 'assessment_date'], ''))
 				];
 			}
 			$_SESSION['ai_import_preview'] = $preview;
@@ -198,6 +201,34 @@ try {
 		if (isset($_POST['confirm_import'])) {
 			$preview = $_SESSION['ai_import_preview'] ?? [];
 			if (!$preview) throw new RuntimeException('No preview is ready to import.');
+			if (isset($_POST['dates']) && !is_array($_POST['dates'])) {
+				throw new RuntimeException('Invalid schedule dates were submitted.');
+			}
+			$submittedDates = $_POST['dates'] ?? [];
+			foreach ($preview as $index => &$row) {
+				$row['date'] = trim((string) ($submittedDates[$index] ?? $row['date'] ?? ''));
+				$type = $row['type'] ?? 'Class';
+				$row['type'] = in_array($type, ['CA', 'Exam'], true) ? $type : 'Class';
+			}
+			unset($row);
+			$_SESSION['ai_import_preview'] = $preview;
+			foreach ($preview as &$row) {
+				if (in_array($row['type'], ['CA', 'Exam'], true) && $row['date'] === '') {
+					throw new RuntimeException('Enter a date for every CA or exam before importing.');
+				}
+				if ($row['date'] !== '') {
+					$dateValue = DateTimeImmutable::createFromFormat('!Y-m-d', $row['date']);
+					$dateErrors = DateTimeImmutable::getLastErrors();
+					if (!$dateValue || ($dateErrors !== false && ($dateErrors['warning_count'] > 0 || $dateErrors['error_count'] > 0))) {
+						throw new RuntimeException('Enter a valid date for each one-time schedule row.');
+					}
+					if (in_array($row['type'], ['CA', 'Exam'], true)) {
+						$row['day_of_week'] = $dateValue->format('l');
+					}
+				}
+			}
+			unset($row);
+			$_SESSION['ai_import_preview'] = $preview;
 			$pdo->beginTransaction();
 			foreach ($preview as $row) {
 				$find = $pdo->prepare('SELECT id FROM programmes WHERE program_code = :code LIMIT 1'); $find->execute([':code' => $row['program_code']]); $program = $find->fetch();
@@ -207,7 +238,13 @@ try {
 				$find = $pdo->prepare('SELECT id FROM rooms WHERE room_name = :name LIMIT 1'); $find->execute([':name' => $row['room_name']]); $room = $find->fetch();
 				if (!$room) { $add = $pdo->prepare('INSERT INTO rooms (room_name, capacity) VALUES (:name, 50) RETURNING id'); $add->execute([':name' => $row['room_name']]); $roomId = $add->fetchColumn(); } else $roomId = $room['id'];
 				$map = $pdo->prepare('INSERT INTO course_program (course_id, program_id, year_level, semester) VALUES (:course, :program, :year, :semester) ON CONFLICT DO NOTHING'); $map->execute([':course' => $courseId, ':program' => $programId, ':year' => $row['year_level'], ':semester' => $row['semester']]);
-				$add = $pdo->prepare('INSERT INTO schedules (program_id, course_id, room_id, type, day_of_week, start_time, end_time, year_level, semester) VALUES (:program, :course, :room, :type, :day, :start, :end, :year, :semester)'); $add->execute([':program' => $programId, ':course' => $courseId, ':room' => $roomId, ':type' => $row['type'], ':day' => $row['day_of_week'], ':start' => $row['start_time'], ':end' => $row['end_time'], ':year' => $row['year_level'], ':semester' => $row['semester']]);
+				$add = $pdo->prepare('INSERT INTO schedules (program_id, course_id, room_id, type, day_of_week, start_time, end_time, year_level, semester, date) VALUES (:program, :course, :room, :type, :day, :start, :end, :year, :semester, :date) RETURNING id'); $add->execute([':program' => $programId, ':course' => $courseId, ':room' => $roomId, ':type' => $row['type'], ':day' => $row['day_of_week'], ':start' => $row['start_time'], ':end' => $row['end_time'], ':year' => $row['year_level'], ':semester' => $row['semester'], ':date' => $row['date'] !== '' ? $row['date'] : null]);
+				$scheduleId = (int) $add->fetchColumn();
+				if (in_array($row['type'], ['CA', 'Exam'], true)) {
+					recordAssessmentClassExceptions($pdo, $scheduleId);
+				} else {
+					refreshClassExceptions($pdo, $scheduleId);
+				}
 			}
 			$pdo->commit(); unset($_SESSION['ai_import_preview']); $preview = []; $message = 'Timetable imported successfully.'; $messageType = 'success';
 		}
@@ -221,4 +258,4 @@ try {
 <?php if ($message): ?><div class="alert-box <?php echo htmlspecialchars($messageType); ?>"><?php echo htmlspecialchars($message); ?></div><?php endif; ?>
 <section class="dash-card"><h3>Analyse document</h3><form method="POST" enctype="multipart/form-data"><input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>"><input type="file" name="timetable_document" accept=".pdf,.csv,.txt,.png,.jpg,.jpeg" required><button class="btn-submit" name="analyse_document">Analyse timetable</button></form></section>
 <section class="dash-card"><h3>CSV template</h3><p>Download a CSV template for bulk timetable updates.</p><a class="filter-export" href="data:text/csv;charset=utf-8,Program%20Code,Course%20Code,Course%20Name,Year%20Level,Semester,Day,Start%20Time,End%20Time,Room%20Name,Type%0AABC,CS101,Programming%20Fundamentals,1,1,Monday,08:00,09:00,LT1,Class" download="timetable_template.csv">Download template</a></section>
-<?php if ($preview): ?><section class="dash-card"><h3>Import preview</h3><div style="overflow-x:auto"><table class="schedule-table"><thead><tr><th>Programme</th><th>Course</th><th>Year</th><th>Semester</th><th>Day</th><th>Time</th><th>Room</th></tr></thead><tbody><?php foreach ($preview as $row): ?><tr><td><?php echo htmlspecialchars($row['program_code']); ?></td><td><?php echo htmlspecialchars($row['course_code'] . ' - ' . $row['course_name']); ?></td><td><?php echo $row['year_level']; ?></td><td><?php echo $row['semester']; ?></td><td><?php echo htmlspecialchars($row['day_of_week']); ?></td><td><?php echo htmlspecialchars($row['start_time'] . ' - ' . $row['end_time']); ?></td><td><?php echo htmlspecialchars($row['room_name']); ?></td></tr><?php endforeach; ?></tbody></table></div><form method="POST"><input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>"><button class="btn-submit" name="confirm_import">Confirm import</button><button class="filter-reset" name="clear_preview">Clear</button></form></section><?php endif; ?></main></body></html>
+<?php if ($preview): ?><section class="dash-card"><h3>Import preview</h3><form method="POST"><input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>"><div style="overflow-x:auto"><table class="schedule-table"><thead><tr><th>Programme</th><th>Course</th><th>Year</th><th>Semester</th><th>Day</th><th>Time</th><th>Room</th><th>Type / date</th></tr></thead><tbody><?php foreach ($preview as $index => $row): ?><tr><td><?php echo htmlspecialchars($row['program_code']); ?></td><td><?php echo htmlspecialchars($row['course_code'] . ' - ' . $row['course_name']); ?></td><td><?php echo $row['year_level']; ?></td><td><?php echo $row['semester']; ?></td><td><?php echo htmlspecialchars($row['day_of_week']); ?></td><td><?php echo htmlspecialchars($row['start_time'] . ' - ' . $row['end_time']); ?></td><td><?php echo htmlspecialchars($row['room_name']); ?></td><td><?php echo htmlspecialchars($row['type']); ?><br><input type="date" name="dates[<?php echo $index; ?>]" value="<?php echo htmlspecialchars($row['date'] ?? ''); ?>" aria-label="Date for row <?php echo $index + 1; ?>"></td></tr><?php endforeach; ?></tbody></table></div><button class="btn-submit" name="confirm_import">Confirm import</button><button class="filter-reset" name="clear_preview">Clear</button></form></section><?php endif; ?></main></body></html>

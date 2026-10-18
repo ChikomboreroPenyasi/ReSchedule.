@@ -271,6 +271,7 @@ fun DashboardScreen(viewModel: MainViewModel) {
 @Composable
 fun TimetableScreen(viewModel: MainViewModel) {
     val schedules by viewModel.schedules.collectAsState(initial = emptyList())
+    val classExceptions by viewModel.classExceptions.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     var selectedTypeIndex by remember { mutableStateOf(0) }
     val types = listOf("All entries", "Classes", "Assessments")
@@ -334,6 +335,18 @@ fun TimetableScreen(viewModel: MainViewModel) {
             }
 
             SectionTitle("Aligned with your Year/Semester")
+
+            if (classExceptions.isNotEmpty()) {
+                SectionTitle("One-time class replacements")
+                classExceptions.forEach { exception ->
+                    Text(
+                        "${exception.occurrence_date}: ${exception.course_code} (${exception.start_time}-${exception.end_time}) replaced by ${exception.replacement}",
+                        color = Warning,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                }
+            }
 
             val filtered = schedules.filter { item ->
                 val searchMatch = searchQuery.isBlank() || 

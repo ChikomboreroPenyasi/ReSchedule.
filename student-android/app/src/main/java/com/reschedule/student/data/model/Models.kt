@@ -121,7 +121,18 @@ data class SchedulesResponse(
     val status: String,
     val message: String?,
     val timetable: List<ScheduleDto>?,
-    val assessments: List<ScheduleDto>?
+    val assessments: List<ScheduleDto>?,
+    val class_exceptions: List<ClassExceptionDto>?
+)
+
+data class ClassExceptionDto(
+    val schedule_id: Int,
+    val occurrence_date: String,
+    val course_code: String,
+    val start_time: String,
+    val end_time: String,
+    val source_type: String,
+    val replacement: String
 )
 
 data class ScheduleDto(

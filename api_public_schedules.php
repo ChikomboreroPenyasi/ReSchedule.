@@ -1,6 +1,7 @@
 <?php
 header('Content-Type: application/json; charset=utf-8');
 require_once 'db.php';
+require_once 'schedule_exceptions.php';
 
 try {
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -12,6 +13,30 @@ try {
                 http_response_code(422);
                 echo json_encode(['status' => 'error', 'message' => "Missing field: {$field}"]);
                 exit();
+            }
+        }
+        $type = trim($input['type']);
+        if (!in_array($type, ['Class', 'CA', 'Exam'], true)) {
+            http_response_code(422);
+            echo json_encode(['status' => 'error', 'message' => 'Invalid schedule type.']);
+            exit();
+        }
+        $date = trim((string) ($input['date'] ?? ''));
+        if (in_array($type, ['CA', 'Exam'], true) && $date === '') {
+            http_response_code(422);
+            echo json_encode(['status' => 'error', 'message' => 'A specific date is required for a CA or exam.']);
+            exit();
+        }
+        if ($date !== '') {
+            $dateValue = DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+            $dateErrors = DateTimeImmutable::getLastErrors();
+            if (!$dateValue || ($dateErrors !== false && ($dateErrors['warning_count'] > 0 || $dateErrors['error_count'] > 0))) {
+                http_response_code(422);
+                echo json_encode(['status' => 'error', 'message' => 'Invalid schedule date.']);
+                exit();
+            }
+            if (in_array($type, ['CA', 'Exam'], true)) {
+                $input['day_of_week'] = $dateValue->format('l');
             }
         }
 
@@ -35,24 +60,41 @@ try {
 
         $stmt = $pdo->prepare("
             INSERT INTO schedules
-                (program_id, course_id, room_id, course_code, course_name, day_of_week, start_time, end_time, type, year_level, semester)
+                (program_id, course_id, room_id, course_code, course_name, day_of_week, start_time, end_time, type, year_level, semester, date)
             VALUES
-                (:program_id, :course_id, :room_id, :course_code, :course_name, :day_of_week, :start_time, :end_time, :type, :year_level, :semester)
+                (:program_id, :course_id, :room_id, :course_code, :course_name, :day_of_week, :start_time, :end_time, :type, :year_level, :semester, :date)
+            RETURNING id
         ");
-        foreach ($mappings as $mapping) {
-            $stmt->execute([
-                ':program_id' => (int) $mapping['program_id'],
-                ':course_id' => (int) $course['id'],
-                ':room_id' => 1,
-                ':course_code' => trim($input['course_code']),
-                ':course_name' => trim($input['course_name']),
-                ':day_of_week' => trim($input['day_of_week']),
-                ':start_time' => trim($input['start_time']),
-                ':end_time' => trim($input['end_time']),
-                ':type' => trim($input['type']),
-                ':year_level' => (int) $mapping['year_level'],
-                ':semester' => (int) $mapping['semester']
-            ]);
+        $pdo->beginTransaction();
+        try {
+            foreach ($mappings as $mapping) {
+                $stmt->execute([
+                    ':program_id' => (int) $mapping['program_id'],
+                    ':course_id' => (int) $course['id'],
+                    ':room_id' => 1,
+                    ':course_code' => trim($input['course_code']),
+                    ':course_name' => trim($input['course_name']),
+                    ':day_of_week' => trim($input['day_of_week']),
+                    ':start_time' => trim($input['start_time']),
+                    ':end_time' => trim($input['end_time']),
+                    ':type' => $type,
+                    ':year_level' => (int) $mapping['year_level'],
+                    ':semester' => (int) $mapping['semester'],
+                    ':date' => $date !== '' ? $date : null
+                ]);
+                $scheduleId = (int) $stmt->fetchColumn();
+                if (in_array($type, ['CA', 'Exam'], true)) {
+                    recordAssessmentClassExceptions($pdo, $scheduleId);
+                } elseif ($type === 'Class') {
+                    refreshClassExceptions($pdo, $scheduleId);
+                }
+            }
+            $pdo->commit();
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
         }
 
         echo json_encode(['status' => 'success', 'message' => 'Schedule published successfully.']);

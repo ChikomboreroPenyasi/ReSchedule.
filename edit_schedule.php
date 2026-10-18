@@ -3,6 +3,7 @@ session_start();
 
 // Import shared database setup
 require_once 'db.php';
+require_once 'schedule_exceptions.php';
 
 // Auth Guard: Admin and Lecturer access only
 if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role'] ?? '', ['Administrator', 'Lecturer'])) {
@@ -71,6 +72,18 @@ try {
         $date = !empty($_POST['date']) ? $_POST['date'] : null;
         $start_time = $_POST['start_time'] ?? null;
         $end_time = $_POST['end_time'] ?? null;
+        $isAssessment = in_array($type, ['CA', 'Exam'], true);
+        if ($isAssessment && !$date) {
+            $error = 'A specific date is required for a CA or exam.';
+        } elseif ($date) {
+            $dateValue = DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+            $dateErrors = DateTimeImmutable::getLastErrors();
+            if (!$dateValue || ($dateErrors !== false && ($dateErrors['warning_count'] > 0 || $dateErrors['error_count'] > 0))) {
+                $error = 'Enter a valid schedule date.';
+            } elseif ($isAssessment) {
+                $day_of_week = $dateValue->format('l');
+            }
+        }
 
         $selectedMappings = [];
         foreach ($selected_program_ids as $selectedProgramId) {
@@ -91,57 +104,83 @@ try {
         } elseif (empty($selected_program_ids) || empty($course_code) || empty($course_name) || empty($start_time) || empty($end_time) || empty($room_id)) {
             $error = "Please fill in all required fields.";
         } else {
-            // 2. Infer Day of Week from Date if CA/Exam
-            if (!empty($date) && empty($day_of_week)) {
-                $day_of_week = date('l', strtotime($date));
-            }
-
-            $roomConflictStmt = $pdo->prepare("SELECT id FROM schedules WHERE room_id = :room_id AND day_of_week = :day_of_week AND id != :schedule_id AND ((start_time < :end_time AND end_time > :start_time))");
-            $roomConflictStmt->execute([
+            $roomConflictSql = $isAssessment
+                ? "SELECT id, type, date, program_id, year_level, semester FROM schedules WHERE room_id = :room_id AND day_of_week = :day_of_week AND id != :schedule_id AND (date IS NULL OR date = :date) AND start_time < :end_time AND end_time > :start_time"
+                : "SELECT id, type, date, program_id, year_level, semester FROM schedules WHERE room_id = :room_id AND type = 'Class' AND date IS NULL AND day_of_week = :day_of_week AND id != :schedule_id AND start_time < :end_time AND end_time > :start_time";
+            $roomConflictStmt = $pdo->prepare($roomConflictSql);
+            $roomConflictParams = [
                 ':room_id' => $room_id,
                 ':day_of_week' => $day_of_week,
                 ':end_time' => $end_time,
                 ':start_time' => $start_time,
                 ':schedule_id' => $schedule_id,
-            ]);
-            if ($roomConflictStmt->fetch()) {
+            ];
+            if ($isAssessment) {
+                $roomConflictParams[':date'] = $date;
+            }
+            $roomConflictStmt->execute($roomConflictParams);
+            foreach ($roomConflictStmt->fetchAll() as $roomConflict) {
+                $matchingCohort = isset($selectedMappings[(int) $roomConflict['program_id']])
+                    && $selectedMappings[(int) $roomConflict['program_id']]['year_level'] === (int) $roomConflict['year_level']
+                    && $selectedMappings[(int) $roomConflict['program_id']]['semester'] === (int) $roomConflict['semester'];
+                if ($isAssessment && $roomConflict['type'] === 'Class' && $matchingCohort) {
+                    continue;
+                }
                 $error = "Conflict detected: the selected room is already booked during this time slot.";
-            } else {
+                break;
+            }
+
+            if (empty($error)) {
+                $lecturerConflictSql = $isAssessment
+                    ? "SELECT s.id, s.type, s.program_id, s.year_level, s.semester FROM schedules s JOIN courses c ON s.course_id = c.id WHERE c.lecturer_id = (SELECT lecturer_id FROM courses WHERE id = :course_id) AND s.day_of_week = :day_of_week AND s.id != :schedule_id AND (s.date IS NULL OR s.date = :date) AND s.start_time < :end_time AND s.end_time > :start_time"
+                    : "SELECT s.id, s.type, s.program_id, s.year_level, s.semester FROM schedules s JOIN courses c ON s.course_id = c.id WHERE c.lecturer_id = (SELECT lecturer_id FROM courses WHERE id = :course_id) AND s.type = 'Class' AND s.date IS NULL AND s.day_of_week = :day_of_week AND s.id != :schedule_id AND s.start_time < :end_time AND s.end_time > :start_time";
                 $lecturerConflictStmt = $pdo->prepare("
-                    SELECT s.id
-                    FROM schedules s
-                    JOIN courses c ON s.course_id = c.id
-                    WHERE c.lecturer_id = (SELECT lecturer_id FROM courses WHERE id = :course_id)
-                    AND s.day_of_week = :day_of_week
-                    AND s.id != :schedule_id
-                    AND ((s.start_time < :end_time AND s.end_time > :start_time))
+                    {$lecturerConflictSql}
                 ");
-                $lecturerConflictStmt->execute([
+                $lecturerConflictParams = [
                     ':course_id' => $schedule['course_id'],
                     ':day_of_week' => $day_of_week,
                     ':end_time' => $end_time,
                     ':start_time' => $start_time,
                     ':schedule_id' => $schedule_id,
-                ]);
-                if ($lecturerConflictStmt->fetch()) {
+                ];
+                if ($isAssessment) {
+                    $lecturerConflictParams[':date'] = $date;
+                }
+                $lecturerConflictStmt->execute($lecturerConflictParams);
+                foreach ($lecturerConflictStmt->fetchAll() as $lecturerConflict) {
+                    $matchingCohort = isset($selectedMappings[(int) $lecturerConflict['program_id']])
+                        && $selectedMappings[(int) $lecturerConflict['program_id']]['year_level'] === (int) $lecturerConflict['year_level']
+                        && $selectedMappings[(int) $lecturerConflict['program_id']]['semester'] === (int) $lecturerConflict['semester'];
+                    if ($isAssessment && $lecturerConflict['type'] === 'Class' && $matchingCohort) {
+                        continue;
+                    }
                     $error = "Conflict detected: this lecturer already has another class scheduled during that time.";
+                    break;
                 }
             }
 
             if (empty($error)) {
-                $cohortConflictStmt = $pdo->prepare('SELECT id FROM schedules WHERE program_id = :program_id AND year_level = :year_level AND semester = :semester AND day_of_week = :day_of_week AND id != :schedule_id AND start_time < :end_time AND end_time > :start_time LIMIT 1');
+                $cohortConflictSql = $isAssessment
+                    ? "SELECT id FROM schedules WHERE program_id = :program_id AND year_level = :year_level AND semester = :semester AND type <> 'Class' AND date = :date AND day_of_week = :day_of_week AND id != :schedule_id AND start_time < :end_time AND end_time > :start_time LIMIT 1"
+                    : "SELECT id FROM schedules WHERE program_id = :program_id AND year_level = :year_level AND semester = :semester AND type = 'Class' AND (date IS NULL OR date = :date) AND day_of_week = :day_of_week AND id != :schedule_id AND start_time < :end_time AND end_time > :start_time LIMIT 1";
+                $cohortConflictStmt = $pdo->prepare($cohortConflictSql);
                 foreach ($selectedMappings as $programId => $mapping) {
-                    $cohortConflictStmt->execute([
+                    $cohortConflictParams = [
                         ':program_id' => (int) $programId,
                         ':year_level' => $mapping['year_level'],
                         ':semester' => $mapping['semester'],
                         ':day_of_week' => $day_of_week,
                         ':schedule_id' => $schedule_id,
                         ':start_time' => $start_time,
-                        ':end_time' => $end_time
-                    ]);
+                        ':end_time' => $end_time,
+                        ':date' => $date,
+                    ];
+                    $cohortConflictStmt->execute($cohortConflictParams);
                     if ($cohortConflictStmt->fetch()) {
-                        $error = 'Conflict detected: this programme, year, and semester already has a schedule during that time.';
+                        $error = $isAssessment
+                            ? 'Conflict detected: this programme already has another assessment at that date and time.'
+                            : 'Conflict detected: this programme, year, and semester already has a class during that time.';
                         break;
                     }
                 }
@@ -172,6 +211,9 @@ try {
                 $firstProgramId = array_key_first($selectedMappings);
                 $firstMapping = $selectedMappings[$firstProgramId];
                 $pdo->beginTransaction();
+                $replacedClassOccurrences = 0;
+                $clearOldExceptions = $pdo->prepare("DELETE FROM schedule_exceptions WHERE schedule_id = :class_schedule_id OR source_schedule_id = :source_schedule_id");
+                $clearOldExceptions->execute([':class_schedule_id' => $schedule_id, ':source_schedule_id' => $schedule_id]);
 
                 $deleteMappings = $pdo->prepare('DELETE FROM course_program WHERE course_id = :course_id');
                 $deleteMappings->execute([':course_id' => $course_id]);
@@ -207,7 +249,9 @@ try {
                         (program_id, course_id, room_id, type, day_of_week, start_time, end_time, date, course_code, course_name, year_level, semester)
                     VALUES
                         (:program_id, :course_id, :room_id, :type, :day_of_week, :start_time, :end_time, :date, :course_code, :course_name, :year_level, :semester)
+                    RETURNING id
                 ");
+                $createdScheduleIds = [(int) $schedule_id];
                 foreach ($selectedMappings as $programId => $mapping) {
                     if ((int) $programId === (int) $firstProgramId) {
                         continue;
@@ -226,10 +270,23 @@ try {
                         ':year_level' => (int) $mapping['year_level'],
                         ':semester' => (int) $mapping['semester']
                     ]);
+                    $createdScheduleIds[] = (int) $insertStmt->fetchColumn();
+                }
+                if ($isAssessment) {
+                    foreach ($createdScheduleIds as $createdScheduleId) {
+                        $replacedClassOccurrences += recordAssessmentClassExceptions($pdo, $createdScheduleId);
+                    }
+                } else {
+                    foreach ($createdScheduleIds as $createdScheduleId) {
+                        refreshClassExceptions($pdo, $createdScheduleId);
+                    }
                 }
                 $pdo->commit();
 
                 $message = "Schedule entry updated for " . count($selectedMappings) . " programme assignment(s).";
+                if ($isAssessment) {
+                    $message .= " {$replacedClassOccurrences} regular class occurrence(s) replaced on that date; future weekly classes remain scheduled.";
+                }
             
                 // Refresh schedule data in scope
                 $stmt->execute([':id' => $schedule_id]);
@@ -239,8 +296,14 @@ try {
     }
 
 } catch (PDOException $e) {
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
     $error = "Database Error: " . $e->getMessage();
 } catch (Throwable $e) {
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
     $error = $e->getMessage();
 }
 ?>

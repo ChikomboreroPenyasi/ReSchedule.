@@ -26,6 +26,7 @@ $next_class = null;
 $next_assessment = null;
 $notifications = [];
 $calendarDays = [];
+$calendarClassExceptions = [];
 $message = '';
 $message_type = 'danger';
 
@@ -147,11 +148,16 @@ try {
     }
     $class_schedules = $stmt_class->fetchAll();
 
+    $todayExceptionsStmt = $pdo->prepare('SELECT schedule_id FROM schedule_exceptions WHERE occurrence_date = CURRENT_DATE');
+    $todayExceptionsStmt->execute();
+    $todayExceptions = array_fill_keys(array_map('intval', $todayExceptionsStmt->fetchAll(PDO::FETCH_COLUMN)), true);
+
     $currentTimestamp = time();
     foreach ($class_schedules as $classSchedule) {
-        $isToday = ($classSchedule['day_of_week'] ?? '') === date('l');
+        $isOneOffToday = !empty($classSchedule['date']) && $classSchedule['date'] === date('Y-m-d');
+        $isToday = $isOneOffToday || (empty($classSchedule['date']) && ($classSchedule['day_of_week'] ?? '') === date('l'));
         $classTimestamp = strtotime(($isToday ? date('Y-m-d') : '1970-01-01') . ' ' . ($classSchedule['start_time'] ?? '00:00:00'));
-        if ($isToday && $classTimestamp >= $currentTimestamp) {
+        if ($isToday && !isset($todayExceptions[(int) $classSchedule['id']]) && $classTimestamp >= $currentTimestamp) {
             $next_class = $classSchedule;
             break;
         }
@@ -244,9 +250,30 @@ try {
     $calendarStart = new DateTimeImmutable(sprintf('%04d-%02d-01', $calendarYear, $calendarMonth));
     $calendarDaysInMonth = (int) $calendarStart->format('t');
     $calendarEventsByDate = [];
+    $calendarEnd = $calendarStart->modify('last day of this month');
+
+    $exceptionsStmt = $pdo->prepare('SELECT schedule_id, occurrence_date FROM schedule_exceptions WHERE occurrence_date BETWEEN :start_date AND :end_date');
+    $exceptionsStmt->execute([':start_date' => $calendarStart->format('Y-m-d'), ':end_date' => $calendarEnd->format('Y-m-d')]);
+    foreach ($exceptionsStmt->fetchAll() as $exception) {
+        $calendarClassExceptions[(int) $exception['schedule_id'] . '|' . $exception['occurrence_date']] = true;
+    }
 
     foreach ($class_schedules as $schedule) {
         if (empty($schedule['day_of_week'])) {
+            continue;
+        }
+        if (!empty($schedule['date'])) {
+            $specificDate = new DateTimeImmutable($schedule['date']);
+            $dateKey = $specificDate->format('Y-m-d');
+            if ($specificDate->format('n') === $calendarMonth
+                && $specificDate->format('Y') === (string) $calendarYear
+                && !isset($calendarClassExceptions[(int) $schedule['id'] . '|' . $dateKey])) {
+                $calendarEventsByDate[$dateKey][] = [
+                    'type' => 'Class',
+                    'label' => trim((string) ($schedule['course_code'] ?? 'Class')),
+                    'time' => trim((string) ($schedule['start_time'] ?? '')) . ' - ' . trim((string) ($schedule['end_time'] ?? ''))
+                ];
+            }
             continue;
         }
         $dayName = $schedule['day_of_week'];
@@ -255,11 +282,13 @@ try {
             $date = new DateTimeImmutable(sprintf('%04d-%02d-%02d', $calendarYear, $calendarMonth, $dayNumber));
             if ($date->format('l') === $dayName) {
                 $dateKey = $date->format('Y-m-d');
-                $calendarEventsByDate[$dateKey][] = [
-                    'type' => 'Class',
-                    'label' => trim((string) ($schedule['course_code'] ?? 'Class')),
-                    'time' => trim((string) ($schedule['start_time'] ?? '')) . ' - ' . trim((string) ($schedule['end_time'] ?? ''))
-                ];
+                if (!isset($calendarClassExceptions[(int) $schedule['id'] . '|' . $dateKey])) {
+                    $calendarEventsByDate[$dateKey][] = [
+                        'type' => 'Class',
+                        'label' => trim((string) ($schedule['course_code'] ?? 'Class')),
+                        'time' => trim((string) ($schedule['start_time'] ?? '')) . ' - ' . trim((string) ($schedule['end_time'] ?? ''))
+                    ];
+                }
             }
             $dayNumber++;
         }
@@ -277,6 +306,31 @@ try {
                 'type' => strtoupper((string) ($assessment['type'] ?? 'Assessment')),
                 'label' => trim((string) ($assessment['course_code'] ?? 'Assessment')),
                 'time' => trim((string) ($assessment['start_time'] ?? '')) . ' - ' . trim((string) ($assessment['end_time'] ?? ''))
+            ];
+        }
+    }
+
+    $eventSql = "SELECT id, title, start_datetime, end_datetime, is_all_day FROM events WHERE end_datetime >= :month_start AND start_datetime < :month_end";
+    if ($role === 'Student') {
+        $eventSql .= " AND visibility IN ('Everyone', 'Students')";
+    }
+    $eventStmt = $pdo->prepare($eventSql);
+    $eventStmt->execute([
+        ':month_start' => $calendarStart->format('Y-m-d 00:00:00'),
+        ':month_end' => $calendarEnd->modify('+1 day')->format('Y-m-d 00:00:00')
+    ]);
+    foreach ($eventStmt->fetchAll() as $event) {
+        $eventStart = new DateTimeImmutable($event['start_datetime']);
+        $eventEnd = new DateTimeImmutable($event['end_datetime']);
+        for ($eventDate = $eventStart->setTime(0, 0); $eventDate <= $eventEnd->setTime(0, 0); $eventDate = $eventDate->modify('+1 day')) {
+            if ((int) $eventDate->format('n') !== $calendarMonth || (int) $eventDate->format('Y') !== $calendarYear) {
+                continue;
+            }
+            $dateKey = $eventDate->format('Y-m-d');
+            $calendarEventsByDate[$dateKey][] = [
+                'type' => 'Event',
+                'label' => trim((string) $event['title']),
+                'time' => !empty($event['is_all_day']) ? 'All day' : $eventStart->format('H:i') . ' - ' . $eventEnd->format('H:i')
             ];
         }
     }
