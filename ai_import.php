@@ -53,7 +53,11 @@ function callAI(array $content): string {
 	if (!$key) throw new RuntimeException('GEMINI_API_KEY is not configured on the server.');
 	$model = getenv('GEMINI_MODEL') ?: 'gemini-2.5-flash';
 	$url = 'https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode($model) . ':generateContent?key=' . rawurlencode($key);
-	$payload = ['contents' => [['role' => 'user', 'parts' => geminiParts($content)]], 'generationConfig' => ['temperature' => 0, 'responseMimeType' => 'application/json']];
+	$generationConfig = ['temperature' => 0, 'responseMimeType' => 'application/json', 'maxOutputTokens' => 8192];
+	if (str_starts_with($model, 'gemini-2.5-')) {
+		$generationConfig['thinkingConfig'] = ['thinkingBudget' => 0];
+	}
+	$payload = ['contents' => [['role' => 'user', 'parts' => geminiParts($content)]], 'generationConfig' => $generationConfig];
 	$ch = curl_init($url);
 	curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => json_encode($payload), CURLOPT_HTTPHEADER => ['Content-Type: application/json'], CURLOPT_RETURNTRANSFER => true, CURLOPT_CONNECTTIMEOUT => 15, CURLOPT_TIMEOUT => 180]);
 	$response = curl_exec($ch); $error = curl_error($ch); $errorCode = curl_errno($ch); $status = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
