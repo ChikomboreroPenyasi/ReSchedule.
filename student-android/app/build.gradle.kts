@@ -13,8 +13,8 @@ android {
         applicationId = "com.reschedule.student"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
         buildConfigField("String", "API_BASE_URL", "\"https://reschedule-1.onrender.com/\"")
         buildConfigField("String", "SIGNUP_URL", "\"https://reschedule-1.onrender.com/signup.php\"")
     }
@@ -56,8 +56,6 @@ dependencies {
     // Retrofit
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
-    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
-
     // Room
     val roomVersion = "2.6.1"
     implementation("androidx.room:room-runtime:$roomVersion")
