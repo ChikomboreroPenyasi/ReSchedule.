@@ -1,6 +1,6 @@
 # ReSchedule. Student Android App
 
-This is the student-only Android client for the existing PHP/XAMPP website.
+This is the student-only Android client for the ReSchedule PHP website.
 
 ## Features
 
@@ -17,16 +17,16 @@ This is the student-only Android client for the existing PHP/XAMPP website.
 - Logout
 - Signup opens the existing website signup form
 
-## Run with XAMPP and Android device
+## Connect to the deployed website
 
-1. Start Apache and MySQL in XAMPP.
-2. Confirm the website opens at `http://192.168.1.186/ReScheduleWeb/` on the phone or emulator browser.
-3. Open this `student-android` folder in Android Studio.
-4. Sync Gradle and run the `app` configuration on an emulator.
-5. The app connects to `http://192.168.1.186/ReScheduleWeb/` for login, timetable data, and signup.
+1. Open this `student-android` folder in Android Studio.
+2. Sync Gradle and run the `app` configuration on an emulator or device.
+3. The app uses `https://reschedule-1.onrender.com/` for login, timetable data, and signup.
 
-The phone and computer must be on the same Wi-Fi network, and Windows Firewall must allow Apache traffic on port 80.
+The Android app calls the website's PHP API over HTTPS. Render's PHP service reads and writes the same Supabase PostgreSQL database as the website, so both clients share user accounts, schedules, and reschedule requests. The app does not connect directly to Supabase and contains no database credentials.
 
-## Database connection
+To use a different deployment, change `API_BASE_URL` and `SIGNUP_URL` in `app/build.gradle.kts` to that website's HTTPS URLs, then rebuild the app. The website and its database can be updated independently of an installed Android APK; installing an updated app build is required to receive Android client changes.
 
-The Android app does not connect directly to MySQL. It connects to `api_login.php` and `api_schedules.php` over HTTP. Those PHP endpoints load `db.php`, which connects to the XAMPP MySQL database using the existing `DB_HOST`, `DB_NAME`, `DB_USER`, and `DB_PASS` settings. This keeps database credentials out of the APK.
+## Local XAMPP testing
+
+For local testing only, change the URLs in `app/build.gradle.kts` to the computer's reachable HTTPS or HTTP address. If using HTTP, Android cleartext traffic must be enabled for a development build. The phone and computer must be on the same Wi-Fi network, and Windows Firewall must allow Apache traffic.

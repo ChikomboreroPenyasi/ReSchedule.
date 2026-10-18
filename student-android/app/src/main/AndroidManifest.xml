@@ -6,8 +6,7 @@
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
         android:label="@string/app_name"
-        android:theme="@style/Theme.RescheduleStudent"
-        android:usesCleartextTraffic="true">
+        android:theme="@style/Theme.RescheduleStudent">
         <activity android:name=".MainActivity" android:exported="false" />
         <activity android:name=".SplashActivity" android:exported="true">
             <intent-filter>

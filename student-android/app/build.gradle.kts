@@ -15,8 +15,8 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
-        buildConfigField("String", "API_BASE_URL", "\"http://192.168.1.186/ReScheduleWeb/\"")
-        buildConfigField("String", "SIGNUP_URL", "\"http://192.168.1.186/ReScheduleWeb/signup.php\"")
+        buildConfigField("String", "API_BASE_URL", "\"https://reschedule-1.onrender.com/\"")
+        buildConfigField("String", "SIGNUP_URL", "\"https://reschedule-1.onrender.com/signup.php\"")
     }
 
     buildFeatures {
