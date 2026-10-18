@@ -30,7 +30,11 @@ function geminiParts(array $content): array {
 function aiResponseText(string $response): string {
 	$json = json_decode($response, true);
 	if (isset($json['error']['message'])) throw new RuntimeException($json['error']['message']);
-	$parts = $json['candidates'][0]['content']['parts'] ?? [];
+	$candidate = $json['candidates'][0] ?? [];
+	if (($candidate['finishReason'] ?? '') === 'MAX_TOKENS') {
+		throw new RuntimeException('The timetable is too large for one Gemini response. Split it into smaller files (for example, one day at a time) and retry.');
+	}
+	$parts = $candidate['content']['parts'] ?? [];
 	return implode('', array_column($parts, 'text'));
 }
 
@@ -53,7 +57,7 @@ function callAI(array $content, array $schema): string {
 	if (!$key) throw new RuntimeException('GEMINI_API_KEY is not configured on the server.');
 	$model = getenv('GEMINI_MODEL') ?: 'gemini-2.5-flash';
 	$url = 'https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode($model) . ':generateContent?key=' . rawurlencode($key);
-	$generationConfig = ['temperature' => 0, 'responseMimeType' => 'application/json', 'responseJsonSchema' => $schema, 'maxOutputTokens' => 8192];
+	$generationConfig = ['temperature' => 0, 'responseMimeType' => 'application/json', 'responseJsonSchema' => $schema, 'maxOutputTokens' => 32768];
 	if (str_starts_with($model, 'gemini-2.5-')) {
 		$generationConfig['thinkingConfig'] = ['thinkingBudget' => 0];
 	}
