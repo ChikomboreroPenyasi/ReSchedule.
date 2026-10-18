@@ -34,6 +34,20 @@ function aiResponseText(string $response): string {
 	return implode('', array_column($parts, 'text'));
 }
 
+function pdfToText(string $path): string {
+	$outputPath = tempnam(sys_get_temp_dir(), 'reschedule-pdf-');
+	if ($outputPath === false) throw new RuntimeException('Could not prepare the PDF for analysis.');
+
+	try {
+		exec('pdftotext -layout ' . escapeshellarg($path) . ' ' . escapeshellarg($outputPath) . ' 2>&1', $output, $exitCode);
+		if ($exitCode !== 0) return '';
+		$text = file_get_contents($outputPath);
+		return $text === false ? '' : trim($text);
+	} finally {
+		if (file_exists($outputPath)) unlink($outputPath);
+	}
+}
+
 function callAI(array $content): string {
 	$key = getenv('GEMINI_API_KEY');
 	if (!$key) throw new RuntimeException('GEMINI_API_KEY is not configured on the server.');
@@ -87,10 +101,15 @@ try {
 			$prompt = 'Extract every timetable row. Return JSON only as {"rows":[{"program_code":"","course_code":"","course_name":"","year_level":1,"semester":1,"day_of_week":"Monday","start_time":"08:00","end_time":"09:00","room_name":"","type":"Class"}]}. Decode values like 4,2 as year 4 semester 2. Apply merged time headers to following rows. Use Not assigned for unknown values. Do not explain.';
 
 			if ($mime === 'application/pdf') {
-				$content = [
-					['type' => 'text', 'text' => $prompt],
-					['type' => 'inline_data', 'mime_type' => $mime, 'data' => base64_encode(file_get_contents($file['tmp_name']))],
-				];
+				$text = pdfToText($file['tmp_name']);
+				if ($text !== '') {
+					$content = [['type' => 'text', 'text' => $prompt . "\n\nDocument content:\n" . $text]];
+				} else {
+					$content = [
+						['type' => 'text', 'text' => $prompt],
+						['type' => 'inline_data', 'mime_type' => $mime, 'data' => base64_encode(file_get_contents($file['tmp_name']))],
+					];
+				}
 			} elseif (str_starts_with($mime, 'image/')) {
 				$content = [
 					['type' => 'text', 'text' => $prompt],

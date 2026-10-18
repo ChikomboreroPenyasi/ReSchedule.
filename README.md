@@ -20,7 +20,7 @@ Run Apache from `C:\xampp\htdocs\ReScheduleWeb` and enable `extension=pdo_pgsql`
 
 ## AI timetable import
 
-The importer sends PDF, image, CSV, and text uploads to Gemini for extraction. Create an API key in Google AI Studio and set `GEMINI_API_KEY` in the PHP/Apache server environment. The default model is `gemini-2.5-flash`; set `GEMINI_MODEL` to use another available Gemini model.
+The importer extracts text from searchable PDFs locally with Poppler before sending the timetable text to Gemini. Scanned PDFs and image, CSV, and text uploads are sent to Gemini directly. The Render Docker image installs Poppler. Create an API key in Google AI Studio and set `GEMINI_API_KEY` in the PHP/Apache server environment. The default model is `gemini-2.5-flash`; set `GEMINI_MODEL` to use another available Gemini model.
 
 An NVIDIA key was previously present in a local diagnostic file. Revoke/rotate it if you have not already done so.
 
