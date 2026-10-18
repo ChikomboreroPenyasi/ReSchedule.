@@ -130,10 +130,8 @@ try {
                 break;
             }
 
-            if (empty($error)) {
-                $lecturerConflictSql = $isAssessment
-                    ? "SELECT s.id, s.type, s.program_id, s.year_level, s.semester FROM schedules s JOIN courses c ON s.course_id = c.id WHERE c.lecturer_id = (SELECT lecturer_id FROM courses WHERE id = :course_id) AND s.day_of_week = :day_of_week AND s.id != :schedule_id AND (s.date IS NULL OR s.date = :date) AND s.start_time < :end_time AND s.end_time > :start_time"
-                    : "SELECT s.id, s.type, s.program_id, s.year_level, s.semester FROM schedules s JOIN courses c ON s.course_id = c.id WHERE c.lecturer_id = (SELECT lecturer_id FROM courses WHERE id = :course_id) AND s.type = 'Class' AND s.date IS NULL AND s.day_of_week = :day_of_week AND s.id != :schedule_id AND s.start_time < :end_time AND s.end_time > :start_time";
+            if (empty($error) && !$isAssessment) {
+                $lecturerConflictSql = "SELECT s.id, s.type, s.program_id, s.year_level, s.semester FROM schedules s JOIN courses c ON s.course_id = c.id WHERE c.lecturer_id = (SELECT lecturer_id FROM courses WHERE id = :course_id) AND s.type = 'Class' AND s.date IS NULL AND s.day_of_week = :day_of_week AND s.id != :schedule_id AND s.start_time < :end_time AND s.end_time > :start_time";
                 $lecturerConflictStmt = $pdo->prepare("
                     {$lecturerConflictSql}
                 ");
@@ -144,17 +142,8 @@ try {
                     ':start_time' => $start_time,
                     ':schedule_id' => $schedule_id,
                 ];
-                if ($isAssessment) {
-                    $lecturerConflictParams[':date'] = $date;
-                }
                 $lecturerConflictStmt->execute($lecturerConflictParams);
                 foreach ($lecturerConflictStmt->fetchAll() as $lecturerConflict) {
-                    $matchingCohort = isset($selectedMappings[(int) $lecturerConflict['program_id']])
-                        && $selectedMappings[(int) $lecturerConflict['program_id']]['year_level'] === (int) $lecturerConflict['year_level']
-                        && $selectedMappings[(int) $lecturerConflict['program_id']]['semester'] === (int) $lecturerConflict['semester'];
-                    if ($isAssessment && $lecturerConflict['type'] === 'Class' && $matchingCohort) {
-                        continue;
-                    }
                     $error = "Conflict detected: this lecturer already has another class scheduled during that time.";
                     break;
                 }

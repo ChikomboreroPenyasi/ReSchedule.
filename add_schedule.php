@@ -139,28 +139,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        if (!$has_error) {
-            $lecturerConflictSql = in_array($type, ['CA', 'Exam'], true)
-                ? "SELECT s.id, s.type, s.program_id, s.year_level, s.semester FROM schedules s JOIN courses existing_course ON s.course_id = existing_course.id WHERE existing_course.lecturer_id = (SELECT lecturer_id FROM courses WHERE id = :course_id) AND s.day_of_week = :day AND (s.date IS NULL OR s.date = :date) AND s.start_time < :end_time AND s.end_time > :start_time"
-                : "SELECT s.id, s.type, s.program_id, s.year_level, s.semester FROM schedules s JOIN courses existing_course ON s.course_id = existing_course.id WHERE existing_course.lecturer_id = (SELECT lecturer_id FROM courses WHERE id = :course_id) AND s.type = 'Class' AND s.date IS NULL AND s.day_of_week = :day AND s.start_time < :end_time AND s.end_time > :start_time";
+        if (!$has_error && !in_array($type, ['CA', 'Exam'], true)) {
+            $lecturerConflictSql = "SELECT s.id, s.type, s.program_id, s.year_level, s.semester FROM schedules s JOIN courses existing_course ON s.course_id = existing_course.id WHERE existing_course.lecturer_id = (SELECT lecturer_id FROM courses WHERE id = :course_id) AND s.type = 'Class' AND s.date IS NULL AND s.day_of_week = :day AND s.start_time < :end_time AND s.end_time > :start_time";
             $lecturerConflictStmt = $pdo->prepare($lecturerConflictSql);
             $lecturerConflictParams = [':course_id' => (int) $course_id, ':day' => $day_of_week, ':start_time' => $start_time, ':end_time' => $end_time];
-            if (in_array($type, ['CA', 'Exam'], true)) {
-                $lecturerConflictParams[':date'] = $date;
-            }
             $lecturerConflictStmt->execute($lecturerConflictParams);
             foreach ($lecturerConflictStmt->fetchAll() as $lecturerConflict) {
-                $willBeReplaced = $type !== 'Class'
-                    && $lecturerConflict['type'] === 'Class'
-                    && isset($courseProgrammeLevels[(int) $lecturerConflict['program_id']])
-                    && $courseProgrammeLevels[(int) $lecturerConflict['program_id']]['year_level'] === (int) $lecturerConflict['year_level']
-                    && $courseProgrammeLevels[(int) $lecturerConflict['program_id']]['semester'] === (int) $lecturerConflict['semester']
-                    && in_array((int) $lecturerConflict['program_id'], $selected_programmes, true);
-                if (!$willBeReplaced) {
-                    $error = 'Conflict detected: the lecturer already has a schedule during that time.';
-                    $has_error = true;
-                    break;
-                }
+                $error = 'Conflict detected: the lecturer already has a schedule during that time.';
+                $has_error = true;
+                break;
             }
         }
 
