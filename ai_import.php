@@ -48,12 +48,12 @@ function pdfToText(string $path): string {
 	}
 }
 
-function callAI(array $content): string {
+function callAI(array $content, array $schema): string {
 	$key = getenv('GEMINI_API_KEY');
 	if (!$key) throw new RuntimeException('GEMINI_API_KEY is not configured on the server.');
 	$model = getenv('GEMINI_MODEL') ?: 'gemini-2.5-flash';
 	$url = 'https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode($model) . ':generateContent?key=' . rawurlencode($key);
-	$generationConfig = ['temperature' => 0, 'responseMimeType' => 'application/json', 'maxOutputTokens' => 8192];
+	$generationConfig = ['temperature' => 0, 'responseMimeType' => 'application/json', 'responseJsonSchema' => $schema, 'maxOutputTokens' => 8192];
 	if (str_starts_with($model, 'gemini-2.5-')) {
 		$generationConfig['thinkingConfig'] = ['thinkingBudget' => 0];
 	}
@@ -72,14 +72,31 @@ function callAI(array $content): string {
 }
 
 function importRows(string $text): array {
-	$text = trim(preg_replace('/^```(?:json)?\s*|\s*```$/i', '', $text));
+	$text = trim($text);
+	$text = preg_replace('/^```(?:json)?\s*|\s*```$/i', '', $text);
 	$data = json_decode($text, true);
 	if (!is_array($data)) {
 		$start = strpos($text, '{'); $end = strrpos($text, '}');
 		if ($start !== false && $end > $start) $data = json_decode(substr($text, $start, $end - $start + 1), true);
 	}
-	if (isset($data['rows']) && is_array($data['rows'])) return $data['rows'];
-	if (is_array($data) && array_is_list($data)) return $data;
+	if (!is_array($data)) throw new RuntimeException('The model response was not valid JSON. Try uploading the timetable again.');
+
+	$findRows = static function (array $value) use (&$findRows): ?array {
+		if (array_is_list($value)) {
+			if ($value === [] || isset($value[0]) && is_array($value[0])) return $value;
+			return null;
+		}
+		foreach (['rows', 'timetable', 'schedules', 'entries', 'data'] as $key) {
+			if (isset($value[$key]) && is_array($value[$key])) {
+				$rows = $findRows($value[$key]);
+				if ($rows !== null) return $rows;
+			}
+		}
+		return null;
+	};
+
+	$rows = $findRows($data);
+	if ($rows !== null && $rows !== []) return $rows;
 	throw new RuntimeException('The model returned no usable timetable rows.');
 }
 
@@ -123,7 +140,36 @@ try {
 				$content = [['type' => 'text', 'text' => $prompt . "\n\nDocument content:\n" . file_get_contents($file['tmp_name'])]];
 			}
 
-			$aiText = callAI($content);
+			$schema = [
+				'type' => 'OBJECT',
+				'properties' => [
+					'rows' => [
+						'type' => 'ARRAY',
+						'items' => [
+							'type' => 'OBJECT',
+							'properties' => [
+								'program_code' => ['type' => 'STRING'],
+								'course_code' => ['type' => 'STRING'],
+								'course_name' => ['type' => 'STRING'],
+								'year_level' => ['type' => 'INTEGER'],
+								'semester' => ['type' => 'INTEGER'],
+								'day_of_week' => ['type' => 'STRING'],
+								'start_time' => ['type' => 'STRING'],
+								'end_time' => ['type' => 'STRING'],
+								'room_name' => ['type' => 'STRING'],
+								'type' => ['type' => 'STRING'],
+							],
+							'required' => ['program_code', 'course_code', 'course_name', 'year_level', 'semester', 'day_of_week', 'start_time', 'end_time', 'room_name', 'type'],
+						],
+					],
+				],
+				'required' => ['rows'],
+			];
+			$analysisContent = [[
+				'type' => 'text',
+				'text' => 'Identify the weekday from the timetable heading and use it for rows where the day is omitted. Extract all rows that have a start and end time. Each timetable row must have a course name or course code. Apply each printed time to following rows until the next time is shown. Ignore introductory lists that have no time. If year/semester is printed as 4,2, output year_level 4 and semester 2. Use Not assigned for fields absent from the document. Return every scheduled class in the required schema.',
+			], ...$content];
+			$aiText = callAI($analysisContent, $schema);
 			$preview = [];
 			foreach (importRows($aiText) as $row) {
 				$preview[] = [
