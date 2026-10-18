@@ -13,8 +13,8 @@ android {
         applicationId = "com.reschedule.student"
         minSdk = 24
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 3
+        versionName = "1.2"
         buildConfigField("String", "API_BASE_URL", "\"https://reschedule-1.onrender.com/\"")
         buildConfigField("String", "SIGNUP_URL", "\"https://reschedule-1.onrender.com/signup.php\"")
     }

@@ -37,7 +37,8 @@ data class ScheduleEntity(
     val room_name: String,
     val type: String,
     val year_level: Int,
-    val semester: Int
+    val semester: Int,
+    val date: String? = null
 )
 
 @Entity(tableName = "requests")
@@ -145,7 +146,8 @@ data class ScheduleDto(
     val room_name: String?,
     val type: String?,
     val year_level: Int?,
-    val semester: Int?
+    val semester: Int?,
+    val date: String?
 )
 
 data class RequestsResponse(

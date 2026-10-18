@@ -2,7 +2,10 @@ package com.reschedule.student.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -23,6 +26,7 @@ import androidx.compose.ui.unit.sp
 import com.reschedule.student.data.model.*
 import com.reschedule.student.ui.theme.*
 import java.text.SimpleDateFormat
+import java.text.ParseException
 import java.util.*
 
 @Composable
@@ -274,100 +278,158 @@ fun TimetableScreen(viewModel: MainViewModel) {
     val classExceptions by viewModel.classExceptions.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     var selectedTypeIndex by remember { mutableStateOf(0) }
-    val types = listOf("All entries", "Classes", "Assessments")
-    var expanded by remember { mutableStateOf(false) }
+    val types = listOf("Everything", "Classes", "Assessments")
+    val matchesSearch: (ScheduleEntity) -> Boolean = { item ->
+        searchQuery.isBlank() ||
+            item.course_code.contains(searchQuery, ignoreCase = true) ||
+            item.course_name.contains(searchQuery, ignoreCase = true) ||
+            item.day_of_week.contains(searchQuery, ignoreCase = true) ||
+            item.date.orEmpty().contains(searchQuery, ignoreCase = true) ||
+            item.room_name.contains(searchQuery, ignoreCase = true)
+    }
+    val classes = schedules
+        .filter { it.type.equals("class", ignoreCase = true) && matchesSearch(it) }
+        .sortedWith(compareBy({ weekdayOrder(it.day_of_week) }, { it.start_time }))
+    val assessments = schedules
+        .filter { !it.type.equals("class", ignoreCase = true) && matchesSearch(it) }
+        .sortedWith(compareBy({ it.date.orEmpty().ifBlank { "9999-99-99" } }, { it.start_time }))
 
     Scaffold(
         topBar = { Header("Timetable", UiState.Timetable, viewModel) }
     ) { paddingValues ->
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(20.dp)
+                .padding(horizontal = 16.dp),
+            contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Column {
-                    Text("Timetable", color = Navy, fontSize = 25.sp, fontWeight = FontWeight.Bold)
-                    Text(viewModel.getStudentName(), color = Muted, fontSize = 14.sp)
-                }
-                Text(
-                    "View Master",
-                    color = Blue,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clickable { viewModel.navigateTo(UiState.MasterTimetable) }.padding(8.dp)
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-
-            NavigationTabs(UiState.Timetable, onTabSelected = { viewModel.navigateTo(it) })
-
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                label = { Text("Search course, day, or venue") },
-                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Blue,
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color.White
-                ),
-                singleLine = true
-            )
-
-            Box(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
-                OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
-                    Text(types[selectedTypeIndex])
-                }
-                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                    types.forEachIndexed { index, type ->
-                        DropdownMenuItem(
-                            text = { Text(type) },
-                            onClick = {
-                                selectedTypeIndex = index
-                                expanded = false
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                ) {
+                    Column(modifier = Modifier.padding(18.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Your timetable", color = Navy, fontSize = 23.sp, fontWeight = FontWeight.Bold)
+                                Text(viewModel.getStudentName(), color = Muted, fontSize = 14.sp)
                             }
+                            Text(
+                                "View master",
+                                color = Blue,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier
+                                    .clickable { viewModel.navigateTo(UiState.MasterTimetable) }
+                                    .padding(8.dp)
+                            )
+                        }
+                        Text(
+                            viewModel.getYearAndSemester(),
+                            color = Navy,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(top = 10.dp)
                         )
                     }
                 }
             }
 
-            SectionTitle("Aligned with your Year/Semester")
+            item {
+                NavigationTabs(UiState.Timetable, onTabSelected = { viewModel.navigateTo(it) })
+            }
+
+            item {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    label = { Text("Search course, day, date, or room") },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Blue,
+                        focusedContainerColor = Color.White,
+                        unfocusedContainerColor = Color.White
+                    ),
+                    singleLine = true
+                )
+            }
+
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    types.forEachIndexed { index, label ->
+                        FilterChip(
+                            selected = selectedTypeIndex == index,
+                            onClick = { selectedTypeIndex = index },
+                            label = { Text(label) }
+                        )
+                    }
+                }
+            }
 
             if (classExceptions.isNotEmpty()) {
-                SectionTitle("One-time class replacements")
-                classExceptions.forEach { exception ->
-                    Text(
-                        "${exception.occurrence_date}: ${exception.course_code} (${exception.start_time}-${exception.end_time}) replaced by ${exception.replacement}",
-                        color = Warning,
-                        fontSize = 13.sp,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
+                item {
+                    SectionTitle("One-time class changes")
+                    classExceptions.forEach { exception ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color.White)
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Text(
+                                    formatScheduleDate(exception.occurrence_date) ?: exception.occurrence_date,
+                                    color = Warning,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    "${exception.course_code} · ${exception.start_time}–${exception.end_time}",
+                                    color = Navy,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                )
+                                Text(
+                                    "Replaced by ${exception.replacement}",
+                                    color = Muted,
+                                    fontSize = 13.sp,
+                                    modifier = Modifier.padding(top = 2.dp)
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
-            val filtered = schedules.filter { item ->
-                val searchMatch = searchQuery.isBlank() || 
-                        item.course_code.contains(searchQuery, ignoreCase = true) ||
-                        item.course_name.contains(searchQuery, ignoreCase = true) ||
-                        item.day_of_week.contains(searchQuery, ignoreCase = true) ||
-                        item.room_name.contains(searchQuery, ignoreCase = true)
-
-                val typeMatch = when (selectedTypeIndex) {
-                    1 -> item.type.equals("class", ignoreCase = true)
-                    2 -> !item.type.equals("class", ignoreCase = true)
-                    else -> true
+            if (selectedTypeIndex != 1) {
+                item {
+                    SectionTitle("Assessments")
                 }
-                searchMatch && typeMatch
+                if (assessments.isEmpty()) {
+                    item { EmptyStateText("No assessments match your search.") }
+                } else {
+                    items(assessments, key = { it.id }) { item ->
+                        ScheduleCard(item, showRequest = true, onRequestClick = { viewModel.navigateTo(UiState.Requests) })
+                    }
+                }
             }
 
-            if (filtered.isEmpty()) {
-                EmptyStateText("No matching timetable entries.")
-            } else {
-                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                    filtered.forEach { item ->
+            if (selectedTypeIndex != 2) {
+                item {
+                    SectionTitle("Weekly classes")
+                }
+                if (classes.isEmpty()) {
+                    item { EmptyStateText("No classes match your search.") }
+                } else {
+                    items(classes, key = { it.id }) { item ->
                         ScheduleCard(item, showRequest = true, onRequestClick = { viewModel.navigateTo(UiState.Requests) })
                     }
                 }
@@ -1116,20 +1178,59 @@ fun SummaryCard(title: String, value: Int, detail: String) {
 
 @Composable
 fun ScheduleCard(item: ScheduleEntity, showRequest: Boolean, onRequestClick: () -> Unit) {
+    val isClass = item.type.equals("class", ignoreCase = true)
+    val formattedDate = formatScheduleDate(item.date)
     Card(
         modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text(item.course_code, color = Blue, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            Text(item.course_name, color = Ink, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
-            Text("Schedule #${item.id}", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
-            Text("${item.day_of_week} · ${item.start_time} - ${item.end_time}", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
-            Text(item.room_name, color = Navy, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
-            
-            if (!item.type.equals("class", ignoreCase = true)) {
-                Text(item.type, color = Warning, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 5.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(item.course_code.ifBlank { "Course" }, color = Blue, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Surface(
+                    color = if (isClass) Background else Warning.copy(alpha = 0.12f),
+                    shape = MaterialTheme.shapes.small
+                ) {
+                    Text(
+                        if (isClass) "CLASS" else item.type.uppercase(Locale.getDefault()),
+                        color = if (isClass) Navy else Warning,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
+                    )
+                }
             }
+            Text(
+                item.course_name.ifBlank { "Course details unavailable" },
+                color = Ink,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(top = 5.dp)
+            )
+            Text(
+                if (isClass && formattedDate == null) item.day_of_week
+                else "Date · ${formattedDate ?: "Not set"}",
+                color = Navy,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.padding(top = 12.dp)
+            )
+            Text(
+                "${item.start_time} – ${item.end_time}",
+                color = Muted,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(top = 3.dp)
+            )
+            Text(
+                item.room_name.ifBlank { "Room not assigned" },
+                color = Muted,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(top = 5.dp)
+            )
 
             if (showRequest) {
                 Button(
@@ -1142,4 +1243,26 @@ fun ScheduleCard(item: ScheduleEntity, showRequest: Boolean, onRequestClick: () 
             }
         }
     }
+}
+
+private fun formatScheduleDate(date: String?): String? {
+    val value = date?.take(10)?.takeIf { it.isNotBlank() } ?: return null
+    return try {
+        val parser = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { isLenient = false }
+        val parsed = parser.parse(value) ?: return value
+        SimpleDateFormat("EEE, d MMM yyyy", Locale.getDefault()).format(parsed)
+    } catch (_: ParseException) {
+        value
+    }
+}
+
+private fun weekdayOrder(day: String): Int = when (day.lowercase(Locale.getDefault())) {
+    "monday" -> 1
+    "tuesday" -> 2
+    "wednesday" -> 3
+    "thursday" -> 4
+    "friday" -> 5
+    "saturday" -> 6
+    "sunday" -> 7
+    else -> 8
 }

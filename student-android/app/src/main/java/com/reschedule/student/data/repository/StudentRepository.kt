@@ -237,7 +237,8 @@ class StudentRepository(
         room_name = room_name ?: "",
         type = type ?: defaultType,
         year_level = year_level ?: 1,
-        semester = semester ?: 1
+        semester = semester ?: 1,
+        date = date
     )
 
     private fun RequestDto.toEntity() = RequestEntity(
