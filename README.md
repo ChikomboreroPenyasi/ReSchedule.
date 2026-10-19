@@ -1,33 +1,121 @@
-# ReScheduleWeb
+# ReSchedule
 
-## Temporary free deployment (Render + Supabase)
+ReSchedule is a university timetable and academic scheduling portal with a PHP web application, a Supabase PostgreSQL database, and a student Android client. It supports administrator, lecturer, and student workflows for managing weekly classes, dated assessments, campus events, schedule changes, resources, and lecturer cover.
 
-The site runs on Render's free Docker web service and connects directly to Supabase PostgreSQL. Free Render services sleep after inactivity, so the first page load after sleeping can take about a minute. This setup is for a demo, not an official or reliability-sensitive deployment.
+## Project author
 
-1. In Supabase, import the application schema and data from `rescheduledb_supabase.sql`. Then open **SQL Editor** and run [`database/supabase_migration.sql`](./database/supabase_migration.sql). This migration adapts the imported legacy table names (for example, `programs` and `course_programs`) to the names used by the PHP app (for example, `programmes` and `course_program`).
-2. If you import or re-import the database dump after running the migration, run the migration again afterward. It is designed to be re-runnable and does not replace the imported data. Do not re-import the dump just to fix a missing app table; rerun the migration instead.
-3. If a later app update changes the migration, run the updated migration in Supabase SQL Editor as well. The schedule-exception migration supports date-specific class replacements for assessments and events.
-4. Push this repository to GitHub, then in Render choose **New > Blueprint** and select the repository. Render reads [`render.yaml`](./render.yaml) and builds the Docker service.
-5. In Render, set `SUPABASE_DB_URL` to the PostgreSQL connection URI from Supabase. Use the **Session pooler** connection string if the direct database host is not reachable from Render. Keep `sslmode=require`; do not commit the URI or put it in source files.
-6. Deploy the service. Render will provide a `*.onrender.com` URL.
-7. To enable AI timetable import, set `GEMINI_API_KEY` in the Render service environment (Render marks it as a secret). `GEMINI_MODEL` is optional and defaults to `gemini-2.5-flash`.
+- **Name:** Chikomborero A. Peniyasi
+- **Student ID:** 2024061326
 
-The repository includes a Dockerfile that installs PDO PostgreSQL and configures Apache to listen on Render's assigned port. Supabase is persistent storage; Render's local filesystem is not persistent. Uploaded files and other generated local files must not be treated as durable.
+The author attribution is shown in the signed-in web dashboard and documented here.
 
-## Local XAMPP
+## Main features
 
-Run Apache from `C:\xampp\htdocs\ReScheduleWeb` and enable `extension=pdo_pgsql` in `C:\xampp\php\php.ini`. Set `SUPABASE_DB_URL` in the Apache/PHP environment to the same PostgreSQL connection URI. The app no longer supports MySQL/MariaDB.
+### Accounts, roles, and student profiles
 
-## AI timetable import
+- Users sign in with their account credentials; students can sign in with their student number.
+- Administrators manage student and lecturer accounts, including programme and academic year/semester details.
+- Administrators and lecturers have schedule-management tools. Administrator-only tools include bulk timetable generation, document import, and user management.
+- Students see schedules for their programme and academic cohort and can submit reschedule requests.
+- The site uses PHP sessions for web authentication. The Android app uses the website's login API and keeps a local student session.
 
-The importer extracts text from searchable PDFs locally with Poppler before sending the timetable text to Gemini. Scanned PDFs and image, CSV, and text uploads are sent to Gemini directly. The Render Docker image installs Poppler. Create an API key in Google AI Studio and set `GEMINI_API_KEY` in the PHP/Apache server environment. The default model is `gemini-2.5-flash`; set `GEMINI_MODEL` to use another available Gemini model.
+### Weekly timetable and schedule publishing
 
-An NVIDIA key was previously present in a local diagnostic file. Revoke/rotate it if you have not already done so.
+- The master timetable shows class slots by weekday, time, course, lecturer, and room.
+- Administrators and lecturers can publish or edit class, CA, and exam slots for programmes assigned to a course.
+- Course-to-programme mappings provide the year level and semester for each selected programme.
+- The form checks cohort, room, and lecturer conflicts before publishing regular classes. Dated CA/exam entries require a date and are checked against conflicting assessments and room use. A regular class in the assessment cohort's slot is allowed because that occurrence is replaced for that date; the lecturer's regular teaching schedule does not block an assessment.
+- Weekly class entries remain recurring. A date on a schedule row represents a one-off entry.
 
-## Timetable generation and substitute coverage
+### Date-specific class replacements
 
-Administrator dashboard links provide draft timetable generation and publishing. Set each course's weekly session count under its programme assignment in Manage Courses before generating. Drafts are reviewed before publishing and use the programme, year, semester, lecturer, and room constraints.
+- A dated CA or exam replaces only overlapping regular class occurrences for the same programme, year, and semester on that date.
+- A shared event visible to students replaces overlapping class occurrences on each applicable event date. Staff-only events do not suppress student classes.
+- Replacements are stored as schedule exceptions rather than by deleting the recurring class. The original weekly class remains scheduled for other dates.
+- Deleting the assessment or event removes its linked exceptions. The dashboard calendar suppresses only the affected occurrence.
+- The schedule API returns upcoming class exceptions for the student Android app.
 
-Administrators and lecturers can open Substitute Coverage to report lecturer absences; administrators can assign coverage. The Supabase migration prepares the support tables, sequence defaults, schedule lecturer override, and course session-count column.
+### Timetable importer
 
-When a dated CA or exam is published, only overlapping regular classes for that programme/year/semester are replaced on that date. Shared student-facing events replace overlapping classes on their event dates. Recurring weekly classes remain in the timetable on other dates; assessments are not removed.
+The administrator-only **Timetable importer** accepts PDF, CSV, TXT, PNG, and JPG documents. It extracts rows into a reviewable preview; administrators can correct dates before confirming the import. The importer creates or reuses programme, course, room, and course-programme records, then publishes the schedule rows in a database transaction.
+
+Gemini is used to interpret uploaded documents. Searchable PDFs are first converted to text locally with Poppler; scanned PDFs and image, CSV, and text inputs are sent to Gemini. The importer supports CA/exam types and one-off dates when present or entered in the preview. Set `GEMINI_API_KEY` on the server; `GEMINI_MODEL` is optional and defaults to `gemini-2.5-flash`.
+
+### Timetable generation
+
+Administrators can generate a weekly draft for a selected programme, year, and semester. Course assignment session counts determine how many class slots are needed. The generator tries multiple candidate placements while checking cohort, room, and lecturer availability, then presents a draft for review. Only a complete draft can be published. Administrators can optionally replace the existing weekly class entries for the selected cohort.
+
+### Courses and campus resources
+
+- Administrators and lecturers maintain courses, assign them to programmes and academic cohorts, and configure weekly session counts and lecturer assignments.
+- Room and resource management provides the halls/labs and capacity information used by schedule planning.
+- Students can view their timetable and the programme master timetable, including room allocations.
+
+### Events and academic calendar
+
+- Administrators and lecturers create and delete campus events with event type, description, venue, date/time range, all-day setting, and visibility.
+- Student-facing events appear in the dashboard calendar and Android events feed.
+- Events visible to students can create date-specific class replacement exceptions when their time overlaps scheduled classes.
+
+### Reschedule requests
+
+- Students submit a request for a class or assessment with a reason and optional preferred time.
+- Students can see request status and review notes in the dashboard and Android request history.
+- Administrators and lecturers review requests and approve or reject them, with review notes.
+
+### Substitute lecturer coverage
+
+- Lecturers report a date of unavailability; administrators can also report an absence for a lecturer.
+- The system identifies classes taught by that lecturer on the weekday and creates pending coverage records.
+- Administrators can assign a substitute lecturer or remove a coverage record. Candidate suggestions consider programme familiarity, daily schedule load, time clashes, and reported unavailability.
+
+### Student Android app
+
+The Android app is a student-facing client of the same PHP APIs and Supabase-backed data. It provides login, a dashboard, weekly timetable, dated assessments, class-replacement notices, master timetable, reschedule request history/submission, student-facing events, profile, notifications, and campus hub navigation. Assessment cards show their scheduled date and time.
+
+The Android client does **not** connect directly to Supabase and contains no database credentials. It talks to the website over HTTPS; the server talks to PostgreSQL. Install a newly built APK to receive Android UI or data-model changes.
+
+### API status and current scope
+
+The Android-facing PHP APIs include login, schedules, requests, events, announcements, courses, programmes, assignments, attendance, and grades. Some are compatibility/demo endpoints: the assignments, attendance, and grades APIs currently return placeholder/empty data rather than integrated academic records. The Android UI may therefore show empty or demo content for those areas until those services are implemented.
+
+## Technology
+
+- PHP 8 with PDO and Apache
+- Supabase PostgreSQL
+- Render Docker web service
+- Kotlin, Jetpack Compose, Retrofit, and Room for Android
+- Gemini API and Poppler for timetable document interpretation
+
+## Setup and deployment
+
+### Supabase database
+
+1. Import the database schema and data from `rescheduledb_supabase.sql` into Supabase.
+2. Run [`database/supabase_migration.sql`](./database/supabase_migration.sql) in the Supabase SQL Editor. It adapts legacy table names and prepares application columns, defaults, indexes, substitute-coverage support, and schedule exceptions.
+3. If you later import or re-import the database dump, run the migration again. The migration is designed to be re-runnable and does not replace imported data.
+4. Run any future updated migration supplied with an application release.
+
+### Render deployment
+
+1. Push the repository to GitHub and create a Render Blueprint from it. Render uses [`render.yaml`](./render.yaml) and the repository's Dockerfile.
+2. Set `SUPABASE_DB_URL` in the Render service environment to the PostgreSQL connection URI from Supabase. Use the Supabase session pooler if the direct host is unreachable; retain `sslmode=require`.
+3. Set `GEMINI_API_KEY` as a secret environment variable to enable timetable document interpretation. Optionally set `GEMINI_MODEL`.
+4. Deploy the service and use its `*.onrender.com` URL.
+
+The free Render service may sleep while inactive, so its first response can be delayed. Its local filesystem is not durable; do not rely on it for persistent uploads or generated files. This hosting configuration is intended for demonstrations, not reliability-sensitive production use.
+
+### Local XAMPP
+
+Run Apache from the repository folder, enable `pdo_pgsql` in `C:\xampp\php\php.ini`, and configure `SUPABASE_DB_URL` in the Apache/PHP environment. The application uses Supabase PostgreSQL; it does not support MySQL/MariaDB.
+
+### Android build
+
+Open `student-android` in Android Studio, sync Gradle, then run the `app` configuration on a device/emulator or build the debug APK. The deployed website base URL and signup URL are set in `student-android/app/build.gradle.kts`. For local testing, change these to a host reachable from the device.
+
+## Important configuration and security notes
+
+- Never commit database connection strings, Gemini keys, or other credentials. Configure them as server environment variables.
+- Use HTTPS for deployed web and Android API traffic.
+- Use a dedicated, rotated Gemini API key. Revoke any key that was previously exposed.
+- The student ID in the author attribution is intentionally visible on the signed-in dashboard and in this project documentation, as requested by the author.

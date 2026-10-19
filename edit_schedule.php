@@ -335,7 +335,7 @@ try {
                 <a href="manage_reschedules.php"><span class="sidebar-icon">↻</span>Requests</a>
                 <?php if (($_SESSION['role'] ?? '') === 'Administrator'): ?>
                     <a href="manage_users.php"><span class="sidebar-icon">◎</span>Users</a>
-                    <a href="ai_import.php"><span class="sidebar-icon">✦</span>AI import</a>
+                    <a href="ai_import.php"><span class="sidebar-icon">✦</span>Timetable importer</a>
                 <?php endif; ?>
             </nav>
         </aside>

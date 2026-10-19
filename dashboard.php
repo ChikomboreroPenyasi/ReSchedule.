@@ -420,7 +420,7 @@ try {
                     <?php if ($role === 'Administrator'): ?>
                         <a href="generate_timetable.php"><span class="sidebar-icon">✧</span>Generate timetable</a>
                         <a href="manage_users.php"><span class="sidebar-icon">◎</span>Users</a>
-                        <a href="ai_import.php"><span class="sidebar-icon">✦</span>AI import</a>
+                        <a href="ai_import.php"><span class="sidebar-icon">✦</span>Timetable importer</a>
                     <?php endif; ?>
                 </nav>
             <?php endif; ?>
@@ -618,8 +618,8 @@ try {
                 </a>
                 <a href="ai_import.php" class="action-card">
                     <span class="action-card-icon" aria-hidden="true">✦</span>
-                    <div class="action-card-content"><h4>AI Timetable Import</h4>
-                    <p>Upload and review a timetable document</p></div>
+                    <div class="action-card-content"><h4>Timetable Importer</h4>
+                    <p>Upload, review, and import timetable entries</p></div>
                 </a>
                 <a href="manage_users.php" class="action-card">
                     <span class="action-card-icon" aria-hidden="true">◎</span>
@@ -729,6 +729,12 @@ try {
                 </div>
             <?php endif; ?>
         </details>
+
+        <footer class="project-attribution" style="margin: 2rem 0 1rem; padding: 1rem 1.25rem; background: #fff; border: 1px solid #dbe5f0; border-radius: 12px; color: #475569; font-size: .9rem;">
+            Project developer: <strong>Chikomborero A. Peniyasi</strong>
+            <span aria-hidden="true"> · </span>
+            Student ID: <strong>2024061326</strong>
+        </footer>
 
         </div>
         </main>
