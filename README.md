@@ -5,7 +5,6 @@ ReSchedule is a university timetable and academic scheduling portal with a PHP w
 ## Project author
 
 - **Name:** Chikomborero A. Peniyasi
-- **Student ID:** 2024061326
 
 The author attribution is shown in the signed-in web dashboard and documented here.
 
